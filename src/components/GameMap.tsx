@@ -2,21 +2,34 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
-import type { LevelGrid, Position } from "@/lib/types";
+import type { LevelGrid, Position, CurrentQuestion } from "@/lib/types";
 import { LEVEL_1, GRID_SIZE } from "@/lib/levelData";
-import { QuestionModal } from "./QuestionModal";
+import { QuizModal } from "./QuizModal";
 
-/** Koppeling van grid-nummers aan sprite-URL's (placeholder tot echte pixel-art) */
+/** Koppeling van grid-nummers aan lokale sprites in /Tilemap/Tiles */
 const TILE_ASSETS: Record<number, string> = {
-  0: "https://placehold.co/64x64/3f3f3f/png?text=.",
-  1: "https://placehold.co/64x64/6b7280/png?text=Muur",
-  2: "https://placehold.co/64x64/3b82f6/png?text=Hero",
-  3: "https://placehold.co/64x64/eab308/png?text=Deur",
-  4: "https://placehold.co/64x64/f59e0b/png?text=Key",
-  5: "https://placehold.co/64x64/22c55e/png?text=Exit",
+  0: "/Tilemap/Tiles/tile_0000.png",
+  1: "/Tilemap/Tiles/tile_0001.png",
+  2: "/Tilemap/Tiles/tile_0002.png",
+  3: "/Tilemap/Tiles/tile_0003.png",
+  4: "/Tilemap/Tiles/tile_0004.png",
+  5: "/Tilemap/Tiles/tile_0005.png",
 };
 
 const TILE_SIZE = 64;
+
+/** Dummy-vraag voor de deur/terminal (taalverzorging) */
+const DEFAULT_QUESTION: CurrentQuestion = {
+  vraag: "Welke zin is juist?",
+  opties: [
+    { id: "A", text: "De hond loop in de tuin.", correct: false },
+    { id: "B", text: "De hond loopt in de tuin.", correct: true },
+    { id: "C", text: "De hond lopen in de tuin.", correct: false },
+    { id: "D", text: "De hond loopt in de tuin", correct: false },
+  ],
+  correctAntwoord: "B",
+  feedbackBijFout: "Fout! Denk aan 't kofschip.",
+};
 
 function createInitialMap(): LevelGrid {
   return LEVEL_1.map((row) => [...row]);
@@ -34,27 +47,41 @@ function findPlayerStart(grid: LevelGrid): Position {
 export function GameMap() {
   const [map, setMap] = useState<LevelGrid>(createInitialMap);
   const [player, setPlayer] = useState<Position>(() => findPlayerStart(LEVEL_1));
-  const [modalOpen, setModalOpen] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [currentQuestion] = useState<CurrentQuestion>(DEFAULT_QUESTION);
+  const [feedbackMessage, setFeedbackMessage] = useState("");
   const [terminalCell, setTerminalCell] = useState<Position | null>(null);
 
   const handleTerminalAnswer = useCallback(
     (correct: boolean) => {
-      setModalOpen(false);
       if (correct && terminalCell) {
+        setIsModalOpen(false);
         setMap((prev) => {
           const next = prev.map((row) => [...row]);
           next[terminalCell.row][terminalCell.col] = 0;
           return next;
         });
+        setTerminalCell(null);
+      } else {
+        setFeedbackMessage(currentQuestion.feedbackBijFout);
       }
-      setTerminalCell(null);
     },
-    [terminalCell]
+    [terminalCell, currentQuestion.feedbackBijFout]
   );
 
   useEffect(() => {
+    if (feedbackMessage === "") return;
+    const t = setTimeout(() => {
+      setFeedbackMessage("");
+      setIsModalOpen(false);
+      setTerminalCell(null);
+    }, 3000);
+    return () => clearTimeout(t);
+  }, [feedbackMessage]);
+
+  useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (modalOpen) return;
+      if (isModalOpen) return;
 
       const key = e.key;
       if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(key))
@@ -76,12 +103,11 @@ export function GameMap() {
 
       const cell = map[newRow][newCol];
 
-      if (cell === 1) return; // muur: geen beweging
+      if (cell === 1) return;
 
       if (cell === 3) {
-        // deur/terminal: open modal, beweeg niet
         setTerminalCell({ row: newRow, col: newCol });
-        setModalOpen(true);
+        setIsModalOpen(true);
         return;
       }
 
@@ -90,7 +116,7 @@ export function GameMap() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [player, map, modalOpen]);
+  }, [player, map, isModalOpen]);
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-6 p-6 font-opendyslexic">
@@ -135,7 +161,6 @@ export function GameMap() {
                   width={TILE_SIZE}
                   height={TILE_SIZE}
                   className="block"
-                  unoptimized
                 />
               </div>
             );
@@ -143,7 +168,12 @@ export function GameMap() {
         )}
       </div>
 
-      <QuestionModal isOpen={modalOpen} onAnswer={handleTerminalAnswer} />
+      <QuizModal
+        isOpen={isModalOpen}
+        question={currentQuestion}
+        feedbackMessage={feedbackMessage}
+        onAnswer={handleTerminalAnswer}
+      />
     </div>
   );
 }

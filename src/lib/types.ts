@@ -8,3 +8,16 @@ export interface Position {
   row: number;
   col: number;
 }
+
+export interface QuizOption {
+  id: string;
+  text: string;
+  correct: boolean;
+}
+
+export interface CurrentQuestion {
+  vraag: string;
+  opties: QuizOption[];
+  correctAntwoord: string;
+  feedbackBijFout: string;
+}
