@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LevelGrid, Position, CurrentQuestion } from "@/lib/types";
-import { LEVEL_1, GRID_SIZE } from "@/lib/levelData";
+import { MAZE_12X12, GRID_SIZE_MAZE } from "@/lib/levelData";
 import { QuizModal } from "./QuizModal";
 
-/** Paden naar afbeeldingen in public/Tilemap/ */
+/** Paden naar afbeeldingen in public/Tilemap/ – alleen <img> tags, geen Next.js Image */
 const tileAssets: Record<number, string> = {
   0: "/Tilemap/floor.png",
   1: "/Tilemap/wall.png",
@@ -17,21 +17,67 @@ const tileAssets: Record<number, string> = {
 
 const TILE_SIZE = 64;
 
-/** Dummy-vraag voor de Hack Terminal (taalverzorging) */
-const DEFAULT_QUESTION: CurrentQuestion = {
-  vraag: "Welke zin is juist geschreven?",
-  opties: [
-    { id: "A", text: "Hij vind de game leuk.", correct: false },
-    { id: "B", text: "Hij vindt de game leuk.", correct: true },
-    { id: "C", text: "Hij vinddt de game leuk.", correct: false },
-    { id: "D", text: "Hij vinden de game leuk.", correct: false },
-  ],
-  correctAntwoord: "B",
-  feedbackBijFout: "Fout! Denk aan stam + t.",
-};
+// TODO: Replace this with dynamic LLM API call later.
+const questionBank: CurrentQuestion[] = [
+  {
+    vraag: "Welke zin is juist geschreven?",
+    opties: [
+      { id: "A", text: "Hij vind de game leuk.", correct: false },
+      { id: "B", text: "Hij vindt de game leuk.", correct: true },
+      { id: "C", text: "Hij vinddt de game leuk.", correct: false },
+      { id: "D", text: "Hij vinden de game leuk.", correct: false },
+    ],
+    correctAntwoord: "B",
+    feedbackBijFout: "Fout! Denk aan stam + t.",
+  },
+  {
+    vraag: "Welk woord hoort in de zin? De kinderen ... in de tuin.",
+    opties: [
+      { id: "A", text: "speelt", correct: false },
+      { id: "B", text: "spelen", correct: true },
+      { id: "C", text: "spelt", correct: false },
+      { id: "D", text: "speel", correct: false },
+    ],
+    correctAntwoord: "B",
+    feedbackBijFout: "Fout! Het onderwerp is 'de kinderen' (meervoud).",
+  },
+  {
+    vraag: "Welke spelling is correct?",
+    opties: [
+      { id: "A", text: "het reizen", correct: false },
+      { id: "B", text: "het reizen (beide goed)", correct: false },
+      { id: "C", text: "reizen", correct: false },
+      { id: "D", text: "het reizen / reizen", correct: true },
+    ],
+    correctAntwoord: "D",
+    feedbackBijFout: "Fout! Bij 'het' kan zowel 'het reizen' als 'reizen'.",
+  },
+  {
+    vraag: "Kies de juiste werkwoordsvorm: Zij ... gisteren naar school.",
+    opties: [
+      { id: "A", text: "fietste", correct: false },
+      { id: "B", text: "fietsten", correct: false },
+      { id: "C", text: "fietst", correct: false },
+      { id: "D", text: "fietste (enkelvoud) / fietsten (meervoud)", correct: true },
+    ],
+    correctAntwoord: "D",
+    feedbackBijFout: "Fout! Let op enkelvoud vs meervoud.",
+  },
+  {
+    vraag: "Welke zin heeft de juiste interpunctie?",
+    opties: [
+      { id: "A", text: "Wat doe je. vandaag?", correct: false },
+      { id: "B", text: "Wat doe je vandaag?", correct: true },
+      { id: "C", text: "Wat doe je vandaag.", correct: false },
+      { id: "D", text: "wat doe je vandaag?", correct: false },
+    ],
+    correctAntwoord: "B",
+    feedbackBijFout: "Fout! Geen punt midden in de zin; wel vraagteken aan het eind.",
+  },
+];
 
 function createInitialMap(): LevelGrid {
-  return LEVEL_1.map((row) => [...row]);
+  return MAZE_12X12.map((row) => [...row]);
 }
 
 function findPlayerStart(grid: LevelGrid): Position {
@@ -43,18 +89,46 @@ function findPlayerStart(grid: LevelGrid): Position {
   return { row: 1, col: 1 };
 }
 
-export function GameMap() {
+function getRandomQuestion(): CurrentQuestion {
+  return questionBank[Math.floor(Math.random() * questionBank.length)];
+}
+
+interface GameMapProps {
+  currentWorld: number;
+  currentLevel: number;
+  onLevelComplete: () => void;
+  onWorldComplete: () => void;
+}
+
+export function GameMap({
+  currentWorld,
+  currentLevel,
+  onLevelComplete,
+  onWorldComplete,
+}: GameMapProps) {
   const [map, setMap] = useState<LevelGrid>(createInitialMap);
-  const [player, setPlayer] = useState<Position>(() => findPlayerStart(LEVEL_1));
+  const [player, setPlayer] = useState<Position>(() => findPlayerStart(MAZE_12X12));
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [terminalCell, setTerminalCell] = useState<Position | null>(null);
-  const [currentQuestion] = useState<CurrentQuestion>(DEFAULT_QUESTION);
+  const [currentQuestion, setCurrentQuestion] = useState<CurrentQuestion | null>(null);
+  const [levelMessage, setLevelMessage] = useState("");
   const gridRef = useRef<HTMLDivElement>(null);
+
+  const resetLevel = useCallback(() => {
+    setMap(createInitialMap());
+    setPlayer(findPlayerStart(MAZE_12X12));
+  }, []);
 
   useEffect(() => {
     gridRef.current?.focus();
-  }, []);
+  }, [currentLevel]);
+
+  useEffect(() => {
+    if (levelMessage === "") return;
+    const t = setTimeout(() => setLevelMessage(""), 2500);
+    return () => clearTimeout(t);
+  }, [levelMessage]);
 
   const handleTerminalAnswer = useCallback(
     (correct: boolean) => {
@@ -67,11 +141,12 @@ export function GameMap() {
           return next;
         });
         setTerminalCell(null);
+        setCurrentQuestion(null);
       } else {
-        setFeedback("Fout! Denk aan stam + t.");
+        setFeedback(currentQuestion?.feedbackBijFout ?? "Fout! Denk aan stam + t.");
       }
     },
-    [terminalCell]
+    [terminalCell, currentQuestion]
   );
 
   useEffect(() => {
@@ -103,7 +178,7 @@ export function GameMap() {
       const newRow = player.row + dRow;
       const newCol = player.col + dCol;
 
-      if (newRow < 0 || newRow >= GRID_SIZE || newCol < 0 || newCol >= GRID_SIZE)
+      if (newRow < 0 || newRow >= GRID_SIZE_MAZE || newCol < 0 || newCol >= GRID_SIZE_MAZE)
         return;
 
       const cell = map[newRow][newCol];
@@ -112,7 +187,20 @@ export function GameMap() {
 
       if (cell === 3) {
         setTerminalCell({ row: newRow, col: newCol });
+        setCurrentQuestion(getRandomQuestion());
         setIsModalOpen(true);
+        return;
+      }
+
+      if (cell === 5) {
+        if (currentLevel < 5) {
+          onLevelComplete();
+          resetLevel();
+          setLevelMessage(`Level ${currentLevel} voltooid! Door naar level ${currentLevel + 1}.`);
+        } else {
+          window.alert("Wereld Gehaald!");
+          onWorldComplete();
+        }
         return;
       }
 
@@ -121,13 +209,20 @@ export function GameMap() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [player, map, isModalOpen]);
+  }, [player, map, isModalOpen, currentLevel, onLevelComplete, onWorldComplete, resetLevel]);
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-6 p-6 font-opendyslexic">
-      <h1 className="text-2xl font-bold text-slate-800">Doolwijs – Level 1</h1>
+      <h1 className="text-2xl font-bold text-slate-800">
+        Doolwijs – Wereld {currentWorld}, Level {currentLevel}
+      </h1>
+      {levelMessage && (
+        <p className="rounded-lg bg-emerald-100 px-4 py-2 text-lg font-medium text-emerald-800">
+          {levelMessage}
+        </p>
+      )}
       <p className="text-slate-600">
-        Klik op het speelveld en gebruik daarna de pijltjestoetsen om te bewegen. Loop naar de deur voor een taak.
+        Klik op het speelveld en gebruik de pijltjestoetsen. Loop naar de deur voor een taak, daarna naar de uitgang.
       </p>
 
       <div
@@ -137,8 +232,8 @@ export function GameMap() {
         aria-label="Speelveld: gebruik pijltjestoetsen om te bewegen"
         className="grid gap-0 rounded-lg overflow-hidden border-4 border-slate-700 shadow-lg outline-none ring-2 ring-transparent focus:ring-blue-500 focus:ring-offset-2"
         style={{
-          gridTemplateColumns: `repeat(${GRID_SIZE}, ${TILE_SIZE}px)`,
-          gridTemplateRows: `repeat(${GRID_SIZE}, ${TILE_SIZE}px)`,
+          gridTemplateColumns: `repeat(${GRID_SIZE_MAZE}, ${TILE_SIZE}px)`,
+          gridTemplateRows: `repeat(${GRID_SIZE_MAZE}, ${TILE_SIZE}px)`,
         }}
       >
         {map.map((row, r) =>
