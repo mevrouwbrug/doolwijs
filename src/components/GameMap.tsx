@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LevelGrid, Position, CurrentQuestion } from "@/lib/types";
-import { MAZE_12X12, GRID_SIZE_MAZE } from "@/lib/levelData";
+import { getLevelGrid, GRID_SIZE_MAZE } from "@/lib/levelData";
 import { QuizModal } from "./QuizModal";
 
 /** Paden naar afbeeldingen in public/Tilemap/ – alleen <img> tags, geen Next.js Image */
@@ -76,8 +76,8 @@ const questionBank: CurrentQuestion[] = [
   },
 ];
 
-function createInitialMap(): LevelGrid {
-  return MAZE_12X12.map((row) => [...row]);
+function createInitialMap(level: number): LevelGrid {
+  return getLevelGrid(level);
 }
 
 function findPlayerStart(grid: LevelGrid): Position {
@@ -98,6 +98,7 @@ interface GameMapProps {
   currentLevel: number;
   onLevelComplete: () => void;
   onWorldComplete: () => void;
+  onGoHome: () => void;
 }
 
 export function GameMap({
@@ -105,9 +106,11 @@ export function GameMap({
   currentLevel,
   onLevelComplete,
   onWorldComplete,
+  onGoHome,
 }: GameMapProps) {
-  const [map, setMap] = useState<LevelGrid>(createInitialMap);
-  const [player, setPlayer] = useState<Position>(() => findPlayerStart(MAZE_12X12));
+  const baseGrid = getLevelGrid(currentLevel);
+  const [map, setMap] = useState<LevelGrid>(() => createInitialMap(currentLevel));
+  const [player, setPlayer] = useState<Position>(() => findPlayerStart(baseGrid));
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [terminalCell, setTerminalCell] = useState<Position | null>(null);
@@ -115,10 +118,11 @@ export function GameMap({
   const [levelMessage, setLevelMessage] = useState("");
   const gridRef = useRef<HTMLDivElement>(null);
 
-  const resetLevel = useCallback(() => {
-    setMap(createInitialMap());
-    setPlayer(findPlayerStart(MAZE_12X12));
-  }, []);
+  useEffect(() => {
+    const grid = getLevelGrid(currentLevel);
+    setMap(grid);
+    setPlayer(findPlayerStart(grid));
+  }, [currentLevel]);
 
   useEffect(() => {
     gridRef.current?.focus();
@@ -193,10 +197,17 @@ export function GameMap({
       }
 
       if (cell === 5) {
+        const hasClosedDoors = map.some((row) => row.some((t) => t === 3));
+        if (hasClosedDoors) {
+          setLevelMessage("Maak eerst alle opdrachten voordat je naar de uitgang gaat!");
+          return;
+        }
         if (currentLevel < 5) {
+          const nextLevel = currentLevel + 1;
           onLevelComplete();
-          resetLevel();
-          setLevelMessage(`Level ${currentLevel} voltooid! Door naar level ${currentLevel + 1}.`);
+          setMap(getLevelGrid(nextLevel));
+          setPlayer(findPlayerStart(getLevelGrid(nextLevel)));
+          setLevelMessage(`Level ${currentLevel} voltooid! Door naar level ${nextLevel}.`);
         } else {
           window.alert("Wereld Gehaald!");
           onWorldComplete();
@@ -209,13 +220,22 @@ export function GameMap({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [player, map, isModalOpen, currentLevel, onLevelComplete, onWorldComplete, resetLevel]);
+  }, [player, map, isModalOpen, currentLevel, onLevelComplete, onWorldComplete]);
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-6 p-6 font-opendyslexic">
-      <h1 className="text-2xl font-bold text-slate-800">
-        Doolwijs – Wereld {currentWorld}, Level {currentLevel}
-      </h1>
+      <div className="flex w-full max-w-[calc(12*64px)] items-center justify-between gap-4">
+        <h1 className="text-2xl font-bold text-slate-800">
+          Wereld {currentWorld}, Level {currentLevel}
+        </h1>
+        <button
+          type="button"
+          onClick={onGoHome}
+          className="rounded-lg bg-slate-600 px-4 py-2 text-lg font-bold text-white transition hover:bg-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2"
+        >
+          Home
+        </button>
+      </div>
       {levelMessage && (
         <p className="rounded-lg bg-emerald-100 px-4 py-2 text-lg font-medium text-emerald-800">
           {levelMessage}
