@@ -73,6 +73,7 @@ export default function Home() {
 
   const handleWorldComplete = useCallback(() => {
     setUnlockedWorlds(2);
+    setCurrentLevel(1); // terug naar level 1 zodat de wereld opnieuw speelbaar is
     setGameState("menu");
   }, []);
 

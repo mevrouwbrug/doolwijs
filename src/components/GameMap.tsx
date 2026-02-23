@@ -78,6 +78,61 @@ const questionBank: CurrentQuestion[] = [
     correctAntwoord: "C",
     feedbackBijFout: "In een vraag staat 'jij' soms achter het werkwoord. Als jij achter de stam staat, schrijf je geen extra t. Zeg de zin hardop: klinkt het als 'doe' of 'doet'?",
   },
+  {
+    vraag: "Welk woord past in de zin? Mijn broer ... graag voetbal.",
+    opties: [
+      { id: "A", text: "speel", correct: false },
+      { id: "B", text: "speelt", correct: true },
+      { id: "C", text: "spelen", correct: false },
+      { id: "D", text: "speelden", correct: false },
+    ],
+    correctAntwoord: "B",
+    feedbackBijFout: "Het onderwerp is 'mijn broer' – dat is één persoon. Welke werkwoordsvorm hoort daarbij?",
+  },
+  {
+    vraag: "Welke zin is juist?",
+    opties: [
+      { id: "A", text: "Ik loop elke dag naar school.", correct: true },
+      { id: "B", text: "Ik loopt elke dag naar school.", correct: false },
+      { id: "C", text: "Ik lopen elke dag naar school.", correct: false },
+      { id: "D", text: "Ik loopte elke dag naar school.", correct: false },
+    ],
+    correctAntwoord: "A",
+    feedbackBijFout: "Bij 'ik' hoort geen t achter de stam. Wat is de ik-vorm van dit werkwoord?",
+  },
+  {
+    vraag: "Welk woord past in de zin? Gisteren ... ik naar de winkel.",
+    opties: [
+      { id: "A", text: "loop", correct: false },
+      { id: "B", text: "loopt", correct: false },
+      { id: "C", text: "liep", correct: true },
+      { id: "D", text: "lopen", correct: false },
+    ],
+    correctAntwoord: "C",
+    feedbackBijFout: "Gisteren = verleden tijd. Zoek de stam en denk aan de regel van 't kofschip.",
+  },
+  {
+    vraag: "Welke zin is fout geschreven?",
+    opties: [
+      { id: "A", text: "De hond blaft heel hard.", correct: false },
+      { id: "B", text: "De hond blaft soms zachtjes.", correct: false },
+      { id: "C", text: "De honden blaft heel hard.", correct: true },
+      { id: "D", text: "De honden blaffen heel hard.", correct: false },
+    ],
+    correctAntwoord: "C",
+    feedbackBijFout: "Kijk naar het onderwerp: enkelvoud of meervoud? Dan past het werkwoord daarop.",
+  },
+  {
+    vraag: "Welk woord hoort in de zin? Zij ... haar kamer op.",
+    opties: [
+      { id: "A", text: "ruimt", correct: true },
+      { id: "B", text: "ruim", correct: false },
+      { id: "C", text: "ruimen", correct: false },
+      { id: "D", text: "ruimd", correct: false },
+    ],
+    correctAntwoord: "A",
+    feedbackBijFout: "Bij 'zij' komt er een t achter de stam. Wat is de ik-vorm van dit werkwoord?",
+  },
 ];
 
 function createInitialMap(level: number): LevelGrid {
@@ -93,11 +148,21 @@ function findPlayerStart(grid: LevelGrid): Position {
   return { row: 1, col: 1 };
 }
 
-/** Willekeurige vraag uit de bank die nog niet in excludeVragen zit. Zo mogelijk geen herhaling. */
-function getRandomQuestion(excludeVragen: string[]): CurrentQuestion {
-  const available = questionBank.filter((q) => !excludeVragen.includes(q.vraag));
-  const pool = available.length > 0 ? available : questionBank;
-  return pool[Math.floor(Math.random() * pool.length)];
+/** Unieke vingerafdruk van een vraag (vraag + optieteksten), zodat geen twee dezelfde tellen. */
+function questionFingerprint(q: CurrentQuestion): string {
+  const optieTexts = q.opties.map((o) => o.text).sort().join("|");
+  return `${q.vraag.trim()}\n${optieTexts}`;
+}
+
+/** Kies een willekeurige vraag uit de bank die nog NIET is getoond (fingerprint niet in exclude). Nooit dubbele. */
+function getRandomQuestion(excludeFingerprints: string[]): CurrentQuestion {
+  const available = questionBank.filter(
+    (q) => !excludeFingerprints.includes(questionFingerprint(q))
+  );
+  if (available.length === 0) {
+    throw new Error("Geen ongebruikte vragen meer in de bank");
+  }
+  return available[Math.floor(Math.random() * available.length)];
 }
 
 interface GameMapProps {
@@ -127,14 +192,20 @@ export function GameMap({
   const [levelMessage, setLevelMessage] = useState("");
   const [levelMessageType, setLevelMessageType] = useState<"success" | "warning">("success");
   const gridRef = useRef<HTMLDivElement>(null);
-  /** Vraagteksten die deze level al gesteld zijn – nooit 2x dezelfde vraag. Leeg bij levelwissel. */
-  const shownQuestionTextsInLevel = useRef<string[]>([]);
+  /** Vragen die in dit level correct zijn beantwoord (bijgehouden via fingerprint). */
+  const shownInLevel = useRef<{ fingerprints: string[]; vraagTexts: string[] }>({
+    fingerprints: [],
+    vraagTexts: [],
+  });
+  /** Per deur-positie: de vraag die er bij hoort (zelfde vraag tot correct beantwoord). */
+  const doorQuestions = useRef<Map<string, CurrentQuestion>>(new Map());
 
   useEffect(() => {
     const grid = getLevelGrid(currentLevel);
     setMap(grid);
     setPlayer(findPlayerStart(grid));
-    shownQuestionTextsInLevel.current = [];
+    shownInLevel.current = { fingerprints: [], vraagTexts: [] };
+    doorQuestions.current = new Map();
   }, [currentLevel]);
 
   useEffect(() => {
@@ -153,6 +224,17 @@ export function GameMap({
         setLastAnswerWasWrong(false);
         setIsModalOpen(false);
         setFeedback("");
+        // Nu pas toevoegen aan 'shown': vraag is correct beantwoord
+        if (currentQuestion) {
+          const fp = questionFingerprint(currentQuestion);
+          shownInLevel.current = {
+            fingerprints: [...shownInLevel.current.fingerprints, fp],
+            vraagTexts: [...shownInLevel.current.vraagTexts, currentQuestion.vraag.trim()],
+          };
+        }
+        // Deur vergeet de vraag: deur opent (type 0)
+        const doorKey = `${terminalCell.row},${terminalCell.col}`;
+        doorQuestions.current.delete(doorKey);
         setMap((prev) => {
           const next = prev.map((row) => [...row]);
           next[terminalCell.row][terminalCell.col] = 0;
@@ -161,8 +243,9 @@ export function GameMap({
         setTerminalCell(null);
         setCurrentQuestion(null);
       } else {
+        // Fout: vraag NIET toevoegen aan shown – de deur behoudt dezelfde vraag
         setLastAnswerWasWrong(true);
-        setFeedback(currentQuestion?.feedbackBijFout ?? "Fout! Denk aan stam + t.");
+        setFeedback(currentQuestion?.feedbackBijFout ?? "Fout! Denk aan de stam van het werkwoord.");
       }
     },
     [terminalCell, currentQuestion]
@@ -205,17 +288,42 @@ export function GameMap({
       if (cell === 1) return;
 
       if (cell === 3) {
+        const doorKey = `${newRow},${newCol}`;
         setTerminalCell({ row: newRow, col: newCol });
+        setIsModalOpen(true);
+
+        // Speler komt terug bij een deur die al eerder fout was → zelfde vraag opnieuw
+        const cached = doorQuestions.current.get(doorKey);
+        if (cached) {
+          setCurrentQuestion(cached);
+          setQuestionLoading(false);
+          return;
+        }
+
+        // Nieuwe deur: haal een unieke vraag op (niet al correct beantwoord)
         setCurrentQuestion(null);
         setQuestionLoading(true);
-        setIsModalOpen(true);
         const niveau = currentLevel <= 2 ? "1F" : "2F";
-        const exclude = [...shownQuestionTextsInLevel.current];
+        const excludeFingerprints = [...shownInLevel.current.fingerprints];
+        const excludeVragenForApi = [...shownInLevel.current.vraagTexts];
 
         const applyUniqueQuestion = (q: CurrentQuestion | null) => {
-          let question = q ?? getRandomQuestion(exclude);
-          if (exclude.includes(question.vraag)) question = getRandomQuestion(exclude);
-          shownQuestionTextsInLevel.current = [...shownQuestionTextsInLevel.current, question.vraag];
+          let question: CurrentQuestion;
+          try {
+            question = q ?? getRandomQuestion(excludeFingerprints);
+          } catch {
+            question = getRandomQuestion([]);
+          }
+          const fp = questionFingerprint(question);
+          if (excludeFingerprints.includes(fp)) {
+            try {
+              question = getRandomQuestion(excludeFingerprints);
+            } catch {
+              question = getRandomQuestion([]);
+            }
+          }
+          // Sla op per deur (zelfde vraag bij terugkeer na fout)
+          doorQuestions.current.set(doorKey, question);
           setCurrentQuestion(question);
         };
 
@@ -223,10 +331,27 @@ export function GameMap({
           niveau,
           level: currentLevel,
           easier: lastAnswerWasWrong,
-          excludeVragen: exclude,
+          excludeVragen: excludeVragenForApi,
         })
-          .then(applyUniqueQuestion)
-          .catch(() => applyUniqueQuestion(getRandomQuestion(exclude)))
+          .then((q) => {
+            const fp = q ? questionFingerprint(q) : "";
+            if (q && excludeFingerprints.includes(fp)) {
+              try {
+                applyUniqueQuestion(getRandomQuestion(excludeFingerprints));
+              } catch {
+                applyUniqueQuestion(getRandomQuestion([]));
+              }
+            } else {
+              applyUniqueQuestion(q);
+            }
+          })
+          .catch(() => {
+            try {
+              applyUniqueQuestion(getRandomQuestion(excludeFingerprints));
+            } catch {
+              applyUniqueQuestion(getRandomQuestion([]));
+            }
+          })
           .finally(() => setQuestionLoading(false));
         return;
       }
