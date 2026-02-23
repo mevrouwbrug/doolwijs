@@ -26,12 +26,12 @@ export function QuizModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 font-opendyslexic"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 font-opendyslexic"
       role="dialog"
       aria-modal="true"
       aria-labelledby="quiz-modal-title"
     >
-      <div className="mx-4 max-w-lg rounded-2xl bg-slate-100 p-10 shadow-xl">
+      <div className="mx-4 max-w-lg rounded-2xl bg-white p-10 shadow-xl">
         {question && !showFeedback && (
           <>
             <h2

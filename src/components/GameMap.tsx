@@ -6,29 +6,31 @@ import type { LevelGrid, Position, CurrentQuestion } from "@/lib/types";
 import { LEVEL_1, GRID_SIZE } from "@/lib/levelData";
 import { QuizModal } from "./QuizModal";
 
-/** Koppeling van grid-nummers aan lokale sprites in /Tilemap/Tiles */
+/** Koppeling van grid-nummers aan lokale sprites in /Tilemap/ */
 const TILE_ASSETS: Record<number, string> = {
-  0: "/Tilemap/Tiles/tile_0000.png",
-  1: "/Tilemap/Tiles/tile_0001.png",
-  2: "/Tilemap/Tiles/tile_0002.png",
-  3: "/Tilemap/Tiles/tile_0003.png",
-  4: "/Tilemap/Tiles/tile_0004.png",
-  5: "/Tilemap/Tiles/tile_0005.png",
+  0: "/Tilemap/floor.png",
+  1: "/Tilemap/wall.png",
+  2: "/Tilemap/floor.png",
+  3: "/Tilemap/door_closed.png",
+  4: "/Tilemap/floor.png",
+  5: "/Tilemap/exit.png",
 };
+
+const HERO_ASSET = "/Tilemap/hero.png";
 
 const TILE_SIZE = 64;
 
-/** Dummy-vraag voor de deur/terminal (taalverzorging) */
+/** Dummy-vraag voor de Hack Terminal (taalverzorging) */
 const DEFAULT_QUESTION: CurrentQuestion = {
-  vraag: "Welke zin is juist?",
+  vraag: "Welke zin is juist geschreven?",
   opties: [
-    { id: "A", text: "De hond loop in de tuin.", correct: false },
-    { id: "B", text: "De hond loopt in de tuin.", correct: true },
-    { id: "C", text: "De hond lopen in de tuin.", correct: false },
-    { id: "D", text: "De hond loopt in de tuin", correct: false },
+    { id: "A", text: "Hij vind de game leuk.", correct: false },
+    { id: "B", text: "Hij vindt de game leuk.", correct: true },
+    { id: "C", text: "Hij vinddt de game leuk.", correct: false },
+    { id: "D", text: "Hij vinden de game leuk.", correct: false },
   ],
   correctAntwoord: "B",
-  feedbackBijFout: "Fout! Denk aan 't kofschip.",
+  feedbackBijFout: "Fout! Denk aan stam + t.",
 };
 
 function createInitialMap(): LevelGrid {
@@ -75,7 +77,7 @@ export function GameMap() {
       setFeedbackMessage("");
       setIsModalOpen(false);
       setTerminalCell(null);
-    }, 3000);
+    }, 2000);
     return () => clearTimeout(t);
   }, [feedbackMessage]);
 
@@ -133,7 +135,7 @@ export function GameMap() {
         {map.map((row, r) =>
           row.map((tile, c) => {
             const isPlayer = player.row === r && player.col === c;
-            const displayTile = isPlayer ? 2 : tile;
+            const displayTile = isPlayer ? 0 : tile;
             const src = TILE_ASSETS[displayTile] ?? TILE_ASSETS[0];
             return (
               <div
@@ -144,24 +146,31 @@ export function GameMap() {
                 <Image
                   src={src}
                   alt={
-                    isPlayer
-                      ? "Speler"
-                      : tile === 0
-                        ? "Vloer"
-                        : tile === 1
-                          ? "Muur"
-                          : tile === 3
-                            ? "Deur"
-                            : tile === 4
-                              ? "Sleutel"
-                              : tile === 5
-                                ? "Uitgang"
-                                : "Tegel"
+                    tile === 0
+                      ? "Vloer"
+                      : tile === 1
+                        ? "Muur"
+                        : tile === 3
+                          ? "Deur"
+                          : tile === 4
+                            ? "Sleutel"
+                            : tile === 5
+                              ? "Uitgang"
+                              : "Tegel"
                   }
                   width={TILE_SIZE}
                   height={TILE_SIZE}
                   className="block"
                 />
+                {isPlayer && (
+                  <Image
+                    src={HERO_ASSET}
+                    alt="Speler"
+                    width={TILE_SIZE}
+                    height={TILE_SIZE}
+                    className="absolute inset-0 block"
+                  />
+                )}
               </div>
             );
           })
