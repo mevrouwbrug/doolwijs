@@ -132,8 +132,7 @@ export function GameMap() {
         {map.map((row, r) =>
           row.map((tile, c) => {
             const isPlayer = player.row === r && player.col === c;
-            const displayTile = isPlayer ? 0 : tile;
-            const src = TILE_ASSETS[displayTile] ?? TILE_ASSETS[0];
+            const cell = isPlayer ? 0 : tile;
             return (
               <div
                 key={`${r}-${c}`}
@@ -141,27 +140,15 @@ export function GameMap() {
                 style={{ width: TILE_SIZE, height: TILE_SIZE }}
               >
                 <img
-                  src={src}
-                  alt={
-                    tile === 0
-                      ? "Vloer"
-                      : tile === 1
-                        ? "Muur"
-                        : tile === 3
-                          ? "Deur"
-                          : tile === 4
-                            ? "Sleutel"
-                            : tile === 5
-                              ? "Uitgang"
-                              : "Tegel"
-                  }
-                  className="w-full h-full object-cover"
+                  src={TILE_ASSETS[cell] || TILE_ASSETS[0]}
+                  alt="tile"
+                  className="w-full h-full object-cover pixelated"
                 />
                 {isPlayer && (
                   <img
                     src="/Tilemap/hero.png"
-                    alt="speler"
-                    className="absolute top-0 left-0 w-full h-full object-cover z-10"
+                    alt="hero"
+                    className="absolute top-0 left-0 w-full h-full object-cover z-10 pixelated"
                   />
                 )}
               </div>
