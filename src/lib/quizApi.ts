@@ -1,15 +1,17 @@
 import type { CurrentQuestion } from "./types";
 
 export interface FetchQuestionParams {
-  /** Referentieniveau: 1F (fundamenteel) of 2F (streefniveau) */
+  /** Referentieniveau: 1F of 2F */
   niveau: "1F" | "2F";
+  /** Level 1-5: elk level andere vraag (geen herhaling) */
+  level: number;
   /** Bij true: vraag iets makkelijker (adaptief na fout) */
   easier?: boolean;
 }
 
 /**
  * Haalt één meerkeuzevraag taalverzorging op van de LLM via onze API.
- * Bij fout of geen API-key valt de frontend terug op de dummy questionBank.
+ * Level wordt meegestuurd zodat elk level nieuwe vragen krijgt.
  */
 export async function fetchQuestion(
   params: FetchQuestionParams
@@ -20,6 +22,7 @@ export async function fetchQuestion(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         niveau: params.niveau,
+        level: Math.max(1, Math.min(5, params.level)),
         easier: params.easier ?? false,
       }),
     });

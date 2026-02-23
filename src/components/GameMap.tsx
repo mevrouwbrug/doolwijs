@@ -18,7 +18,7 @@ const tileAssets: Record<number, string> = {
 
 const TILE_SIZE = 64;
 
-/** Fallback als de LLM-API niet beschikbaar is */
+/** Fallback als de LLM-API niet beschikbaar is. Vragen in DIA-stijl voor groep 7, 1F→2F. */
 const questionBank: CurrentQuestion[] = [
   {
     vraag: "Welke zin is juist geschreven?",
@@ -29,51 +29,51 @@ const questionBank: CurrentQuestion[] = [
       { id: "D", text: "Hij vinden de game leuk.", correct: false },
     ],
     correctAntwoord: "B",
-    feedbackBijFout: "Fout! Denk aan stam + t.",
+    feedbackBijFout: "Kijk naar het onderwerp: wie doet het? Bij 'hij' of 'zij' komt er vaak een t achter de stam. Wat is de ik-vorm van dit werkwoord?",
   },
   {
-    vraag: "Welk woord hoort in de zin? De kinderen ... in de tuin.",
+    vraag: "Welk woord past in de zin? De kinderen ... in de tuin.",
     opties: [
       { id: "A", text: "speelt", correct: false },
       { id: "B", text: "spelen", correct: true },
-      { id: "C", text: "spelt", correct: false },
-      { id: "D", text: "speel", correct: false },
+      { id: "C", text: "speel", correct: false },
+      { id: "D", text: "spelt", correct: false },
     ],
     correctAntwoord: "B",
-    feedbackBijFout: "Fout! Het onderwerp is 'de kinderen' (meervoud).",
+    feedbackBijFout: "Tel het onderwerp: is het één persoon of meer? Bij meervoud hoort een andere vorm. Zet 'de kinderen' in je hoofd even om naar 'zij'.",
   },
   {
-    vraag: "Welke spelling is correct?",
+    vraag: "Welke zin is juist geschreven?",
     opties: [
-      { id: "A", text: "het reizen", correct: false },
-      { id: "B", text: "het reizen (beide goed)", correct: false },
-      { id: "C", text: "reizen", correct: false },
-      { id: "D", text: "het reizen / reizen", correct: true },
-    ],
-    correctAntwoord: "D",
-    feedbackBijFout: "Fout! Bij 'het' kan zowel 'het reizen' als 'reizen'.",
-  },
-  {
-    vraag: "Kies de juiste werkwoordsvorm: Zij ... gisteren naar school.",
-    opties: [
-      { id: "A", text: "fietste", correct: false },
-      { id: "B", text: "fietsten", correct: false },
-      { id: "C", text: "fietst", correct: false },
-      { id: "D", text: "fietste (enkelvoud) / fietsten (meervoud)", correct: true },
-    ],
-    correctAntwoord: "D",
-    feedbackBijFout: "Fout! Let op enkelvoud vs meervoud.",
-  },
-  {
-    vraag: "Welke zin heeft de juiste interpunctie?",
-    opties: [
-      { id: "A", text: "Wat doe je. vandaag?", correct: false },
-      { id: "B", text: "Wat doe je vandaag?", correct: true },
-      { id: "C", text: "Wat doe je vandaag.", correct: false },
-      { id: "D", text: "wat doe je vandaag?", correct: false },
+      { id: "A", text: "Gisteren wandel ik naar school.", correct: false },
+      { id: "B", text: "Gisteren wandelde ik naar school.", correct: true },
+      { id: "C", text: "Gisteren wandelt ik naar school.", correct: false },
+      { id: "D", text: "Gisteren wandelen ik naar school.", correct: false },
     ],
     correctAntwoord: "B",
-    feedbackBijFout: "Fout! Geen punt midden in de zin; wel vraagteken aan het eind.",
+    feedbackBijFout: "Gisteren = verleden tijd. Zoek de stam (ik-vorm) en denk aan de regel van 't kofschip. Eindigt de stam op een van die letters?",
+  },
+  {
+    vraag: "Welke zin is juist geschreven?",
+    opties: [
+      { id: "A", text: "Zij werkt elke dag hard.", correct: true },
+      { id: "B", text: "Zij werk elke dag hard.", correct: false },
+      { id: "C", text: "Zij werken elke dag hard.", correct: false },
+      { id: "D", text: "Zij werkte elke dag hard.", correct: false },
+    ],
+    correctAntwoord: "A",
+    feedbackBijFout: "Bij 'zij' (één persoon) hoort één werkwoord. Wat is de stam? Komt er in de tegenwoordige tijd een t achter of niet?",
+  },
+  {
+    vraag: "Welke zin heeft een fout?",
+    opties: [
+      { id: "A", text: "Wat doe je vandaag?", correct: false },
+      { id: "B", text: "Hij doet zijn huiswerk.", correct: false },
+      { id: "C", text: "Doet jij je jas aan?", correct: true },
+      { id: "D", text: "Zij doet de deur open.", correct: false },
+    ],
+    correctAntwoord: "C",
+    feedbackBijFout: "In een vraag staat 'jij' soms achter het werkwoord. Als jij achter de stam staat, schrijf je geen extra t. Zeg de zin hardop: klinkt het als 'doe' of 'doet'?",
   },
 ];
 
@@ -90,8 +90,10 @@ function findPlayerStart(grid: LevelGrid): Position {
   return { row: 1, col: 1 };
 }
 
-function getRandomQuestion(): CurrentQuestion {
-  return questionBank[Math.floor(Math.random() * questionBank.length)];
+/** Per level een andere fallbackvraag, zodat level 2 niet dezelfde vraag geeft als level 1. */
+function getRandomQuestion(level: number): CurrentQuestion {
+  const index = (Math.max(1, Math.min(level, 5)) - 1) % questionBank.length;
+  return questionBank[index];
 }
 
 interface GameMapProps {
@@ -201,11 +203,11 @@ export function GameMap({
         setQuestionLoading(true);
         setIsModalOpen(true);
         const niveau = currentLevel <= 2 ? "1F" : "2F";
-        fetchQuestion({ niveau, easier: lastAnswerWasWrong })
+        fetchQuestion({ niveau, level: currentLevel, easier: lastAnswerWasWrong })
           .then((q) => {
-            setCurrentQuestion(q ?? getRandomQuestion());
+            setCurrentQuestion(q ?? getRandomQuestion(currentLevel));
           })
-          .catch(() => setCurrentQuestion(getRandomQuestion()))
+          .catch(() => setCurrentQuestion(getRandomQuestion(currentLevel)))
           .finally(() => setQuestionLoading(false));
         return;
       }

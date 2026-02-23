@@ -60,10 +60,12 @@ export default function Home() {
   }, [hydrated, unlockedWorlds, currentWorld, currentLevel]);
 
   const handleStartWorld = useCallback((world: number) => {
-    setCurrentWorld(world);
-    setCurrentLevel(1);
+    if (world !== currentWorld) {
+      setCurrentWorld(world);
+      setCurrentLevel(1);
+    }
     setGameState("playing");
-  }, []);
+  }, [currentWorld]);
 
   const handleLevelComplete = useCallback(() => {
     setCurrentLevel((prev) => Math.min(5, prev + 1));
