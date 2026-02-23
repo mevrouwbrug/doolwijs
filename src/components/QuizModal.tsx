@@ -5,6 +5,7 @@ import type { CurrentQuestion } from "@/lib/types";
 interface QuizModalProps {
   isOpen: boolean;
   question: CurrentQuestion | null;
+  questionLoading?: boolean;
   feedback: string;
   onAnswer: (correct: boolean) => void;
 }
@@ -12,6 +13,7 @@ interface QuizModalProps {
 export function QuizModal({
   isOpen,
   question,
+  questionLoading = false,
   feedback,
   onAnswer,
 }: QuizModalProps) {
@@ -32,7 +34,10 @@ export function QuizModal({
       aria-labelledby="quiz-modal-title"
     >
       <div className="mx-4 max-w-lg rounded-2xl bg-white p-10 shadow-xl">
-        {question && !showFeedback && (
+        {questionLoading && !question && (
+          <p className="text-xl text-slate-600">Vraag laden...</p>
+        )}
+        {question && !showFeedback && !questionLoading && (
           <>
             <h2
               id="quiz-modal-title"

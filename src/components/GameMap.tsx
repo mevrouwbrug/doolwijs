@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LevelGrid, Position, CurrentQuestion } from "@/lib/types";
 import { getLevelGrid, GRID_SIZE_MAZE } from "@/lib/levelData";
+import { fetchQuestion } from "@/lib/quizApi";
 import { QuizModal } from "./QuizModal";
 
 /** Paden naar afbeeldingen in public/Tilemap/ – alleen <img> tags, geen Next.js Image */
@@ -17,7 +18,7 @@ const tileAssets: Record<number, string> = {
 
 const TILE_SIZE = 64;
 
-// TODO: Replace this with dynamic LLM API call later.
+/** Fallback als de LLM-API niet beschikbaar is */
 const questionBank: CurrentQuestion[] = [
   {
     vraag: "Welke zin is juist geschreven?",
@@ -115,6 +116,8 @@ export function GameMap({
   const [feedback, setFeedback] = useState("");
   const [terminalCell, setTerminalCell] = useState<Position | null>(null);
   const [currentQuestion, setCurrentQuestion] = useState<CurrentQuestion | null>(null);
+  const [questionLoading, setQuestionLoading] = useState(false);
+  const [lastAnswerWasWrong, setLastAnswerWasWrong] = useState(false);
   const [levelMessage, setLevelMessage] = useState("");
   const [levelMessageType, setLevelMessageType] = useState<"success" | "warning">("success");
   const gridRef = useRef<HTMLDivElement>(null);
@@ -138,6 +141,7 @@ export function GameMap({
   const handleTerminalAnswer = useCallback(
     (correct: boolean) => {
       if (correct && terminalCell) {
+        setLastAnswerWasWrong(false);
         setIsModalOpen(false);
         setFeedback("");
         setMap((prev) => {
@@ -148,6 +152,7 @@ export function GameMap({
         setTerminalCell(null);
         setCurrentQuestion(null);
       } else {
+        setLastAnswerWasWrong(true);
         setFeedback(currentQuestion?.feedbackBijFout ?? "Fout! Denk aan stam + t.");
       }
     },
@@ -192,8 +197,16 @@ export function GameMap({
 
       if (cell === 3) {
         setTerminalCell({ row: newRow, col: newCol });
-        setCurrentQuestion(getRandomQuestion());
+        setCurrentQuestion(null);
+        setQuestionLoading(true);
         setIsModalOpen(true);
+        const niveau = currentLevel <= 2 ? "1F" : "2F";
+        fetchQuestion({ niveau, easier: lastAnswerWasWrong })
+          .then((q) => {
+            setCurrentQuestion(q ?? getRandomQuestion());
+          })
+          .catch(() => setCurrentQuestion(getRandomQuestion()))
+          .finally(() => setQuestionLoading(false));
         return;
       }
 
@@ -223,7 +236,7 @@ export function GameMap({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [player, map, isModalOpen, currentLevel, onLevelComplete, onWorldComplete]);
+  }, [player, map, isModalOpen, currentLevel, lastAnswerWasWrong, onLevelComplete, onWorldComplete]);
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-6 p-6 font-opendyslexic">
@@ -296,6 +309,7 @@ export function GameMap({
       <QuizModal
         isOpen={isModalOpen}
         question={currentQuestion}
+        questionLoading={questionLoading}
         feedback={feedback}
         onAnswer={handleTerminalAnswer}
       />
