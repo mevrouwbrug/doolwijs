@@ -1,5 +1,6 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element -- bewust <img> voor Tilemap/hero assets */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LevelGrid, Position, CurrentQuestion } from "@/lib/types";
 import { getLevelGrid, GRID_SIZE_MAZE } from "@/lib/levelData";
@@ -18,7 +19,9 @@ const tileAssets: Record<number, string> = {
 
 const TILE_SIZE = 64;
 
-/** Fallback als de LLM-API niet beschikbaar is. Vragen in DIA-stijl voor groep 7, 1F→2F. */
+/** Fallback als de LLM-API niet beschikbaar is. Alle vragen herleidbaar naar DIA/referentiekader:
+ * 1–2: 1F (stam+t, persoonsvorm, jij-vraag). 3–5: 2F (verleden tijd, voltooid deelwoord, lastiger).
+ * Vraagstelling en onderwerpen sluiten aan bij taalverzorging basisschool groep 7. */
 const questionBank: CurrentQuestion[] = [
   {
     vraag: "Welke zin is juist geschreven?",
@@ -90,10 +93,11 @@ function findPlayerStart(grid: LevelGrid): Position {
   return { row: 1, col: 1 };
 }
 
-/** Per level een andere fallbackvraag, zodat level 2 niet dezelfde vraag geeft als level 1. */
-function getRandomQuestion(level: number): CurrentQuestion {
-  const index = (Math.max(1, Math.min(level, 5)) - 1) % questionBank.length;
-  return questionBank[index];
+/** Willekeurige vraag uit de bank die nog niet in excludeVragen zit. Zo mogelijk geen herhaling. */
+function getRandomQuestion(excludeVragen: string[]): CurrentQuestion {
+  const available = questionBank.filter((q) => !excludeVragen.includes(q.vraag));
+  const pool = available.length > 0 ? available : questionBank;
+  return pool[Math.floor(Math.random() * pool.length)];
 }
 
 interface GameMapProps {
@@ -123,11 +127,14 @@ export function GameMap({
   const [levelMessage, setLevelMessage] = useState("");
   const [levelMessageType, setLevelMessageType] = useState<"success" | "warning">("success");
   const gridRef = useRef<HTMLDivElement>(null);
+  /** Vraagteksten die deze level al gesteld zijn – nooit 2x dezelfde vraag. Leeg bij levelwissel. */
+  const shownQuestionTextsInLevel = useRef<string[]>([]);
 
   useEffect(() => {
     const grid = getLevelGrid(currentLevel);
     setMap(grid);
     setPlayer(findPlayerStart(grid));
+    shownQuestionTextsInLevel.current = [];
   }, [currentLevel]);
 
   useEffect(() => {
@@ -203,11 +210,23 @@ export function GameMap({
         setQuestionLoading(true);
         setIsModalOpen(true);
         const niveau = currentLevel <= 2 ? "1F" : "2F";
-        fetchQuestion({ niveau, level: currentLevel, easier: lastAnswerWasWrong })
-          .then((q) => {
-            setCurrentQuestion(q ?? getRandomQuestion(currentLevel));
-          })
-          .catch(() => setCurrentQuestion(getRandomQuestion(currentLevel)))
+        const exclude = [...shownQuestionTextsInLevel.current];
+
+        const applyUniqueQuestion = (q: CurrentQuestion | null) => {
+          let question = q ?? getRandomQuestion(exclude);
+          if (exclude.includes(question.vraag)) question = getRandomQuestion(exclude);
+          shownQuestionTextsInLevel.current = [...shownQuestionTextsInLevel.current, question.vraag];
+          setCurrentQuestion(question);
+        };
+
+        fetchQuestion({
+          niveau,
+          level: currentLevel,
+          easier: lastAnswerWasWrong,
+          excludeVragen: exclude,
+        })
+          .then(applyUniqueQuestion)
+          .catch(() => applyUniqueQuestion(getRandomQuestion(exclude)))
           .finally(() => setQuestionLoading(false));
         return;
       }
