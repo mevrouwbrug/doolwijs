@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Image from "next/image";
 import type { LevelGrid, Position, CurrentQuestion } from "@/lib/types";
 import { LEVEL_1, GRID_SIZE } from "@/lib/levelData";
 import { QuizModal } from "./QuizModal";
@@ -15,8 +14,6 @@ const TILE_ASSETS: Record<number, string> = {
   4: "/Tilemap/floor.png",
   5: "/Tilemap/exit.png",
 };
-
-const HERO_ASSET = "/Tilemap/hero.png";
 
 const TILE_SIZE = 64;
 
@@ -143,7 +140,7 @@ export function GameMap() {
                 className="relative flex items-center justify-center bg-slate-200"
                 style={{ width: TILE_SIZE, height: TILE_SIZE }}
               >
-                <Image
+                <img
                   src={src}
                   alt={
                     tile === 0
@@ -158,17 +155,13 @@ export function GameMap() {
                               ? "Uitgang"
                               : "Tegel"
                   }
-                  width={TILE_SIZE}
-                  height={TILE_SIZE}
-                  className="block"
+                  className="w-full h-full object-cover"
                 />
                 {isPlayer && (
-                  <Image
-                    src={HERO_ASSET}
-                    alt="Speler"
-                    width={TILE_SIZE}
-                    height={TILE_SIZE}
-                    className="absolute inset-0 block"
+                  <img
+                    src="/Tilemap/hero.png"
+                    alt="speler"
+                    className="absolute top-0 left-0 w-full h-full object-cover z-10"
                   />
                 )}
               </div>
