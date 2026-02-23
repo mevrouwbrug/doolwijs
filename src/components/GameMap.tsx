@@ -1,18 +1,22 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Image from "next/image";
 import type { LevelGrid, Position } from "@/lib/types";
-import { LEVEL_1, GRID_SIZE, TILE_SIZE_PX } from "@/lib/levelData";
+import { LEVEL_1, GRID_SIZE } from "@/lib/levelData";
 import { QuestionModal } from "./QuestionModal";
 
-const TILE_STYLES: Record<number, string> = {
-  0: "bg-emerald-500",           // vloer
-  1: "bg-slate-600",             // muur
-  2: "bg-emerald-500",           // speler start (tegel wordt vloer getoond)
-  3: "bg-amber-800",             // deur/terminal
-  4: "bg-amber-400",             // sleutel
-  5: "bg-green-400",             // uitgang
+/** Koppeling van grid-nummers aan sprite-URL's (placeholder tot echte pixel-art) */
+const TILE_ASSETS: Record<number, string> = {
+  0: "https://placehold.co/64x64/3f3f3f/png?text=.",
+  1: "https://placehold.co/64x64/6b7280/png?text=Muur",
+  2: "https://placehold.co/64x64/3b82f6/png?text=Hero",
+  3: "https://placehold.co/64x64/eab308/png?text=Deur",
+  4: "https://placehold.co/64x64/f59e0b/png?text=Key",
+  5: "https://placehold.co/64x64/22c55e/png?text=Exit",
 };
+
+const TILE_SIZE = 64;
 
 function createInitialMap(): LevelGrid {
   return LEVEL_1.map((row) => [...row]);
@@ -96,27 +100,43 @@ export function GameMap() {
       <div
         className="grid gap-0 rounded-lg overflow-hidden border-4 border-slate-700 shadow-lg"
         style={{
-          gridTemplateColumns: `repeat(${GRID_SIZE}, ${TILE_SIZE_PX}px)`,
-          gridTemplateRows: `repeat(${GRID_SIZE}, ${TILE_SIZE_PX}px)`,
+          gridTemplateColumns: `repeat(${GRID_SIZE}, ${TILE_SIZE}px)`,
+          gridTemplateRows: `repeat(${GRID_SIZE}, ${TILE_SIZE}px)`,
         }}
       >
         {map.map((row, r) =>
           row.map((tile, c) => {
             const isPlayer = player.row === r && player.col === c;
-            const displayTile = isPlayer ? 0 : tile;
-            const style = TILE_STYLES[displayTile] ?? "bg-emerald-500";
+            const displayTile = isPlayer ? 2 : tile;
+            const src = TILE_ASSETS[displayTile] ?? TILE_ASSETS[0];
             return (
               <div
                 key={`${r}-${c}`}
-                className={`flex items-center justify-center ${style}`}
-                style={{ width: TILE_SIZE_PX, height: TILE_SIZE_PX }}
+                className="relative flex items-center justify-center bg-slate-200"
+                style={{ width: TILE_SIZE, height: TILE_SIZE }}
               >
-                {isPlayer && (
-                  <div
-                    className="h-8 w-8 rounded-full bg-blue-600 shadow-md"
-                    aria-hidden
-                  />
-                )}
+                <Image
+                  src={src}
+                  alt={
+                    isPlayer
+                      ? "Speler"
+                      : tile === 0
+                        ? "Vloer"
+                        : tile === 1
+                          ? "Muur"
+                          : tile === 3
+                            ? "Deur"
+                            : tile === 4
+                              ? "Sleutel"
+                              : tile === 5
+                                ? "Uitgang"
+                                : "Tegel"
+                  }
+                  width={TILE_SIZE}
+                  height={TILE_SIZE}
+                  className="block"
+                  unoptimized
+                />
               </div>
             );
           })
