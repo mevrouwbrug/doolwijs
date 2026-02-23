@@ -116,6 +116,7 @@ export function GameMap({
   const [terminalCell, setTerminalCell] = useState<Position | null>(null);
   const [currentQuestion, setCurrentQuestion] = useState<CurrentQuestion | null>(null);
   const [levelMessage, setLevelMessage] = useState("");
+  const [levelMessageType, setLevelMessageType] = useState<"success" | "warning">("success");
   const gridRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -199,6 +200,7 @@ export function GameMap({
       if (cell === 5) {
         const hasClosedDoors = map.some((row) => row.some((t) => t === 3));
         if (hasClosedDoors) {
+          setLevelMessageType("warning");
           setLevelMessage("Maak eerst alle opdrachten voordat je naar de uitgang gaat!");
           return;
         }
@@ -207,6 +209,7 @@ export function GameMap({
           onLevelComplete();
           setMap(getLevelGrid(nextLevel));
           setPlayer(findPlayerStart(getLevelGrid(nextLevel)));
+          setLevelMessageType("success");
           setLevelMessage(`Level ${currentLevel} voltooid! Door naar level ${nextLevel}.`);
         } else {
           window.alert("Wereld Gehaald!");
@@ -237,7 +240,13 @@ export function GameMap({
         </button>
       </div>
       {levelMessage && (
-        <p className="rounded-lg bg-emerald-100 px-4 py-2 text-lg font-medium text-emerald-800">
+        <p
+          className={`rounded-lg px-4 py-2 text-lg font-medium ${
+            levelMessageType === "warning"
+              ? "bg-amber-100 text-amber-900"
+              : "bg-emerald-100 text-emerald-800"
+          }`}
+        >
           {levelMessage}
         </p>
       )}
