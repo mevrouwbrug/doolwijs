@@ -5,19 +5,19 @@ import type { CurrentQuestion } from "@/lib/types";
 interface QuizModalProps {
   isOpen: boolean;
   question: CurrentQuestion | null;
-  feedbackMessage: string;
+  feedback: string;
   onAnswer: (correct: boolean) => void;
 }
 
 export function QuizModal({
   isOpen,
   question,
-  feedbackMessage,
+  feedback,
   onAnswer,
 }: QuizModalProps) {
   if (!isOpen) return null;
 
-  const showFeedback = feedbackMessage.length > 0;
+  const showFeedback = feedback.length > 0;
 
   function handleClick(correct: boolean) {
     if (showFeedback) return;
@@ -40,7 +40,7 @@ export function QuizModal({
             >
               {question.vraag}
             </h2>
-            <div className="flex flex-col gap-5">
+            <div className="flex flex-col gap-4">
               {question.opties.map((opt) => (
                 <button
                   key={opt.id}
@@ -57,7 +57,7 @@ export function QuizModal({
         )}
         {showFeedback && (
           <p className="text-2xl font-medium text-red-600" role="status">
-            {feedbackMessage}
+            {feedback}
           </p>
         )}
       </div>

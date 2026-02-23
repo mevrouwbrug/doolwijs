@@ -5,26 +5,14 @@ import type { LevelGrid, Position, CurrentQuestion } from "@/lib/types";
 import { LEVEL_1, GRID_SIZE } from "@/lib/levelData";
 import { QuizModal } from "./QuizModal";
 
-/** Paden naar afbeeldingen in public/Tilemap/ (Next.js serveert public/ vanaf /) */
-const TILE_ASSETS: Record<number, string> = {
+/** Paden naar afbeeldingen in public/Tilemap/ */
+const tileAssets: Record<number, string> = {
   0: "/Tilemap/floor.png",
   1: "/Tilemap/wall.png",
   2: "/Tilemap/floor.png",
   3: "/Tilemap/door_closed.png",
   4: "/Tilemap/floor.png",
   5: "/Tilemap/exit.png",
-};
-
-const HERO_SRC = "/Tilemap/hero.png";
-
-/** Fallbackkleuren als afbeelding niet laadt (geen kapotte iconen) */
-const TILE_FALLBACK_COLORS: Record<number, string> = {
-  0: "bg-amber-100",
-  1: "bg-slate-600",
-  2: "bg-amber-100",
-  3: "bg-amber-700",
-  4: "bg-amber-200",
-  5: "bg-green-400",
 };
 
 const TILE_SIZE = 64;
@@ -59,9 +47,9 @@ export function GameMap() {
   const [map, setMap] = useState<LevelGrid>(createInitialMap);
   const [player, setPlayer] = useState<Position>(() => findPlayerStart(LEVEL_1));
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [currentQuestion] = useState<CurrentQuestion>(DEFAULT_QUESTION);
-  const [feedbackMessage, setFeedbackMessage] = useState("");
+  const [feedback, setFeedback] = useState("");
   const [terminalCell, setTerminalCell] = useState<Position | null>(null);
+  const [currentQuestion] = useState<CurrentQuestion>(DEFAULT_QUESTION);
   const gridRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -72,6 +60,7 @@ export function GameMap() {
     (correct: boolean) => {
       if (correct && terminalCell) {
         setIsModalOpen(false);
+        setFeedback("");
         setMap((prev) => {
           const next = prev.map((row) => [...row]);
           next[terminalCell.row][terminalCell.col] = 0;
@@ -79,21 +68,21 @@ export function GameMap() {
         });
         setTerminalCell(null);
       } else {
-        setFeedbackMessage(currentQuestion.feedbackBijFout);
+        setFeedback("Fout! Denk aan stam + t.");
       }
     },
-    [terminalCell, currentQuestion.feedbackBijFout]
+    [terminalCell]
   );
 
   useEffect(() => {
-    if (feedbackMessage === "") return;
+    if (feedback === "") return;
     const t = setTimeout(() => {
-      setFeedbackMessage("");
+      setFeedback("");
       setIsModalOpen(false);
       setTerminalCell(null);
     }, 2000);
     return () => clearTimeout(t);
-  }, [feedbackMessage]);
+  }, [feedback]);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -156,29 +145,22 @@ export function GameMap() {
           row.map((tile, c) => {
             const isPlayer = player.row === r && player.col === c;
             const cell = isPlayer ? 0 : tile;
-            const fallbackClass = TILE_FALLBACK_COLORS[cell] ?? TILE_FALLBACK_COLORS[0];
             return (
               <div
                 key={`${r}-${c}`}
-                className={`relative flex items-center justify-center overflow-hidden ${fallbackClass}`}
+                className="relative flex items-center justify-center overflow-hidden bg-slate-200"
                 style={{ width: TILE_SIZE, height: TILE_SIZE }}
               >
                 <img
-                  src={TILE_ASSETS[cell] || TILE_ASSETS[0]}
-                  alt=""
-                  className="w-full h-full object-cover pixelated"
-                  onError={(e) => {
-                    e.currentTarget.style.display = "none";
-                  }}
+                  src={tileAssets[cell] || tileAssets[0]}
+                  alt="tile"
+                  className="w-full h-full object-cover"
                 />
                 {isPlayer && (
                   <img
-                    src={HERO_SRC}
-                    alt=""
-                    className="absolute top-0 left-0 w-full h-full object-cover z-10 pixelated"
-                    onError={(e) => {
-                      e.currentTarget.style.display = "none";
-                    }}
+                    src="/Tilemap/hero.png"
+                    alt="hero"
+                    className="absolute top-0 left-0 w-full h-full object-cover z-10"
                   />
                 )}
               </div>
@@ -190,7 +172,7 @@ export function GameMap() {
       <QuizModal
         isOpen={isModalOpen}
         question={currentQuestion}
-        feedbackMessage={feedbackMessage}
+        feedback={feedback}
         onAnswer={handleTerminalAnswer}
       />
     </div>
