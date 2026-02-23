@@ -2,36 +2,113 @@ import { NextRequest, NextResponse } from "next/server";
 import type { CurrentQuestion } from "@/lib/types";
 
 /**
- * API-route: genereer één meerkeuzevraag taalverzorging via LLM (OpenAI).
- * Doel: basisschool 1F → 2F, in stijl van DIA-toetsen (taalverzorging).
+ * API-route: genereer meerkeuzevragen taalverzorging via LLM (OpenAI).
  *
- * Koppeling aan referentieniveaus (herleidbaar naar DIA/referentiekader taal):
- * - 1F (fundamenteel): niveau voor level 1 en 2. Onderwerpen: werkwoordspelling
- *   tegenwoordige tijd (stam + t bij hij/zij), persoonsvorm enkelvoud/meervoud,
- *   vraag met jij (geen t). Sluit aan bij referentiekader taal en DIA-toetsen.
- * - 2F (streefniveau): niveau voor level 3, 4 en 5. Onderwerpen: verleden tijd
- *   ('t kofschip), voltooid deelwoord, lastigere werkwoordspelling. Eindniveau
- *   basisschool (groep 8) zoals in het referentiekader.
+ * Bij count > 1 worden ALLE vragen voor een level in één keer gegenereerd,
+ * zodat ze onderling nooit hetzelfde zijn en nooit overlappen met eerder gestelde vragen.
  *
- * Body: { niveau: "1F" | "2F", easier?: boolean, level?: number, excludeVragen?: string[] }
+ * Progressie 1F → 2F over 8 werelden:
+ *   Wereld 1 – 1F – Persoonsvorm tegenwoordige tijd (stam + t bij hij/zij)
+ *   Wereld 2 – 1F – Persoonsvorm meervoud en jij-vragen (inversie)
+ *   Wereld 3 – 1F – Verleden tijd regelmatige werkwoorden ('t kofschip)
+ *   Wereld 4 – 2F – Verleden tijd onregelmatige werkwoorden
+ *   Wereld 5 – 2F – Voltooid deelwoord (ge+stam+d/t)
+ *   Wereld 6 – 2F – Mix persoonsvorm + voltooid deelwoord
+ *   Wereld 7 – 2F – Taalverzorging: hoofdletters, leestekens, namen
+ *   Wereld 8 – 2F – Toetsniveau: alles gecombineerd
+ *
+ * Body: {
+ *   currentWorld: 1-8,
+ *   level: 1-5,
+ *   count: 1-8,          ← aantal vragen (standaard 1)
+ *   easier?: boolean,    ← adaptief na fout
+ *   excludeVragen?: string[]  ← globaal al gestelde vraagteksten
+ * }
  */
+
+const worldConfig: Record<number, { niveau: "1F" | "2F"; thema: string }> = {
+  1: {
+    niveau: "1F",
+    thema:
+      "Persoonsvorm tegenwoordige tijd: stam + t bij hij/zij/het. Eenvoudige zinnen. Fouten: vergeten t of onjuiste stam.",
+  },
+  2: {
+    niveau: "1F",
+    thema:
+      "Persoonsvorm enkelvoud vs meervoud (de kinderen ... / het kind ...) en inversievragen met jij (geen t na stam bij inversie: 'Loop jij?').",
+  },
+  3: {
+    niveau: "1F",
+    thema:
+      "Verleden tijd regelmatige werkwoorden ('t kofschip: stam+te of stam+de). Bijv. werken→werkte, leven→leefde.",
+  },
+  4: {
+    niveau: "2F",
+    thema:
+      "Verleden tijd onregelmatige werkwoorden (lopen→liep, zien→zag, doen→deed, rijden→reed). Fouten: regelmatige vormen voor onregelmatige werkwoorden.",
+  },
+  5: {
+    niveau: "2F",
+    thema:
+      "Voltooid deelwoord (ge+stam+d of ge+stam+t, 't kofschip). Bijv. gelopen, gezien, gewerkt, gebeld. Fouten: verkeerde uitgang d/t.",
+  },
+  6: {
+    niveau: "2F",
+    thema:
+      "Mix persoonsvorm + voltooid deelwoord in langere zinnen. Bijv. 'Hij heeft gisteren hard gewerkt.' Fouten: combinatie van werkwoordsfouten.",
+  },
+  7: {
+    niveau: "2F",
+    thema:
+      "Taalverzorging: hoofdletters (namen, zinsbegin), kommaplaatsing, punt aan het einde. Fouten in het schrijven van eigennamen of zinsopbouw.",
+  },
+  8: {
+    niveau: "2F",
+    thema:
+      "Toetsniveau: mix van alles (persoonsvorm, verleden tijd, voltooid deelwoord, hoofdletters). De moeilijkste vragen van het programma.",
+  },
+};
+
+function validateQuestion(parsed: unknown): CurrentQuestion | null {
+  if (!parsed || typeof parsed !== "object") return null;
+  const q = parsed as Record<string, unknown>;
+  if (
+    typeof q.vraag !== "string" ||
+    !q.vraag.trim() ||
+    !Array.isArray(q.opties) ||
+    q.opties.length !== 4
+  )
+    return null;
+  const hasCorrect = (q.opties as unknown[]).some(
+    (o) => typeof o === "object" && o !== null && (o as Record<string, unknown>).correct === true
+  );
+  if (!hasCorrect) return null;
+  return q as unknown as CurrentQuestion;
+}
+
 export async function POST(request: NextRequest) {
-  let body: { niveau?: string; easier?: boolean; level?: number; excludeVragen?: string[] };
+  let body: {
+    currentWorld?: number;
+    level?: number;
+    count?: number;
+    easier?: boolean;
+    excludeVragen?: string[];
+  };
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json(
-      { error: "Ongeldige body" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Ongeldige body" }, { status: 400 });
   }
 
-  const niveau = body.niveau === "2F" ? "2F" : "1F";
-  const easier = Boolean(body.easier);
+  const currentWorld = Math.max(1, Math.min(8, Number(body.currentWorld) || 1));
   const level = Math.max(1, Math.min(5, Number(body.level) || 1));
-  const excludeVragen: string[] = Array.isArray(body.excludeVragen) ? body.excludeVragen : [];
-  const apiKey = process.env.OPENAI_API_KEY;
+  const count = Math.max(1, Math.min(8, Number(body.count) || 1));
+  const easier = Boolean(body.easier);
+  const excludeVragen: string[] = Array.isArray(body.excludeVragen)
+    ? body.excludeVragen
+    : [];
 
+  const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
       { error: "OPENAI_API_KEY niet geconfigureerd" },
@@ -39,47 +116,61 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const systemPrompt = `Je bent een expert in taalverzorging voor de basisschool (groep 7, kinderen van 11 jaar). Je maakt meerkeuzevragen in de stijl van de DIA-toets taalverzorging, afgestemd op de referentieniveaus 1F en 2F uit het Referentiekader taal (SLO/OCW). De vragen zijn geschikt voor leerlingen met dyslexie: eenvoudige taal, korte zinnen, één duidelijk goed antwoord.
+  const config = worldConfig[currentWorld] ?? worldConfig[1];
+  const { niveau, thema } = config;
 
-BELANGRIJKE REGELS:
-- Doelgroep: basisschool groep 7, referentieniveau 1F (fundamenteel) tot 2F (streefniveau einde basisschool).
-- Vraagstelling: gebruik dezelfde formulering als in DIA-toetsen taalverzorging, bijv. "Welke zin is juist geschreven?" of "Welk woord past in de zin?".
-- Elke optie is één duidelijke zin of één woord. Geen uitleg in de optie (geen "beide goed", geen "A of B", geen slash).
-- Precies één antwoord is goed. De andere drie zijn herkenbaar fout (veelgemaakte fouten: vergeten d of t, verkeerde persoonsvorm).
-- Onderwerpen 1F (referentiekader): werkwoordspelling tegenwoordige tijd (stam + t bij hij/zij), persoonsvorm enkelvoud/meervoud, eenvoudige zinnen. Onderwerpen 2F: verleden tijd ('t kofschip), voltooid deelwoord, iets moeilijkere werkwoordspelling.
-- feedbackBijFout: SOCRATISCH. Geef nooit het juiste antwoord. Leg kort uit wat er mis is en geef een tip hoe het kind het kan aanpakken (bijv. "Kijk naar het onderwerp: is het enkelvoud of meervoud? Dan weet je welke vorm je nodig hebt." of "Denk aan de stam. Wat is de ik-vorm? Dan kun je de juiste vorm kiezen."). Twee korte zinnen mag: eerst wat er fout is, dan een tip.
+  const levelWithinWorld =
+    level <= 2
+      ? "begin van deze wereld – iets eenvoudiger"
+      : level === 3
+        ? "midden van deze wereld"
+        : "einde van deze wereld – iets uitdagender";
 
-Je antwoordt uitsluitend met geldige JSON in dit exacte formaat (geen markdown, geen extra tekst):
-{
-  "vraag": "Welke zin is juist geschreven?",
-  "opties": [
-    { "id": "A", "text": "Volledige zin of één woord.", "correct": false },
-    { "id": "B", "text": "Volledige zin of één woord.", "correct": true },
-    { "id": "C", "text": "Volledige zin of één woord.", "correct": false },
-    { "id": "D", "text": "Volledige zin of één woord.", "correct": false }
-  ],
-  "correctAntwoord": "B",
-  "feedbackBijFout": "Socratisch: uitleg wat er fout is + tip hoe aan te pakken. Nooit het juiste antwoord geven."
-}
-
-Regels: precies 4 opties (A t/m D), elk optie "text" is één zin of één woord. Geen haakjes met uitleg in de opties. correctAntwoord is de id van de juiste optie.`;
-
-  const levelFocus: Record<number, string> = {
-    1: "Level 1 (1F): stam + t bij hij/zij, tegenwoordige tijd. Eenvoudige zinnen. Sluit aan op referentiekader taal 1F en DIA taalverzorging.",
-    2: "Level 2 (1F): persoonsvorm enkelvoud/meervoud (de kinderen ... / het kind ...) of vraag met jij (geen t). Andere voorbeelden dan level 1. Nog steeds 1F.",
-    3: "Level 3 (2F): verleden tijd, 't kofschip (wandelen-wandelde, werken-werkte). Andere werkwoorden en zinnen. Streefniveau 2F.",
-    4: "Level 4 (2F): moeilijkere werkwoordspelling of voltooid deelwoord (ge+stam+d/t). Andere onderwerpen dan level 1-3. 2F.",
-    5: "Level 5 (2F): mix 2F, bv. lastige persoonsvorm of verdere taalverzorging. Elk level andere vragen en voorbeelden.",
-  };
-
-  const levelInstruction = levelFocus[level] ?? levelFocus[1];
   const excludeText =
     excludeVragen.length > 0
-      ? ` CRUCIAAL: Genereer een ANDERE vraag. Gebruik NIET dezelfde vraagtekst of dezelfde voorbeeldzinnen als deze (deze zijn al gesteld): ${excludeVragen.map((v) => `"${v}"`).join(" | ")}. Kies andere werkwoorden en andere zinnen.`
+      ? ` CRUCIAAL: De volgende vraagteksten zijn GLOBAAL al eerder gesteld (andere levels/werelden). Gebruik deze NOOIT – geen identieke tekst, geen dezelfde voorbeeldzinnen: ${excludeVragen
+          .slice(-40)
+          .map((v) => `"${v}"`)
+          .join(" | ")}. Kies ANDERE werkwoorden en zinnen.`
       : "";
+
+  const systemPrompt = `Je bent een expert in taalverzorging voor de basisschool (groep 7-8, kinderen van 11-12 jaar). Je genereert meerkeuzevragen in de stijl van de DIA-toets taalverzorging, afgestemd op referentieniveaus 1F en 2F (Referentiekader taal, SLO/OCW).
+
+VASTE REGELS:
+- Doelgroep: basisschool groep 7-8, dyslexie-vriendelijk (eenvoudige taal, korte zinnen).
+- Vraagstelling: "Welke zin is juist geschreven?" of "Welk woord past in de zin?" (DIA-stijl).
+- Precies 4 opties (A t/m D) per vraag. Elke optie is één complete zin OF één los woord. Geen uitleg in de optie.
+- Precies één optie is correct. De andere drie zijn herkenbare spelfouten (veelgemaakte werkwoordsfouten).
+- feedbackBijFout: SOCRATISCH. Nooit het juiste antwoord geven. Leg uit wat er fout is + geef een tip (max 2 zinnen).
+- VARIATIE: gebruik steeds andere werkwoorden, andere namen, andere situaties. Nooit twee keer dezelfde voorbeeldzin.
+
+Antwoord UITSLUITEND met geldige JSON (geen markdown, geen extra tekst):
+{
+  "vragen": [
+    {
+      "vraag": "Welke zin is juist geschreven?",
+      "opties": [
+        { "id": "A", "text": "Volledige zin of één woord.", "correct": false },
+        { "id": "B", "text": "Volledige zin of één woord.", "correct": true },
+        { "id": "C", "text": "Volledige zin of één woord.", "correct": false },
+        { "id": "D", "text": "Volledige zin of één woord.", "correct": false }
+      ],
+      "correctAntwoord": "B",
+      "feedbackBijFout": "Socratische tip."
+    }
+  ]
+}`;
+
   const userPrompt = easier
-    ? `Genereer één meerkeuzevraag taalverzorging voor basisschool groep 7 (11 jaar), niveau ${niveau}, aan de makkelijke kant (na een fout). ${levelInstruction}${excludeText} Gebruik "Welke zin is juist geschreven?" of "Welk woord past in de zin?". Vier duidelijke opties, één goed. feedbackBijFout: socratisch (wat is er fout + tip), nooit het goede antwoord geven.`
-    : `Genereer één meerkeuzevraag taalverzorging voor basisschool groep 7 (11 jaar), referentieniveau ${niveau}. BELANGRIJK: dit is level ${level}. ${levelInstruction}${excludeText} Zorg dat de vraag en de voorbeelden ANDERS zijn (andere werkwoorden, andere zinnen). Gebruik "Welke zin is juist geschreven?" of "Welk woord past in de zin?". Vier duidelijke opties, één goed. feedbackBijFout: socratisch (uitleg wat er fout is + tip hoe aan te pakken), nooit het juiste antwoord geven.`;
+    ? `Genereer ${count} meerkeuzevraag${count > 1 ? "vragen" : ""} taalverzorging voor basisschool groep 7-8, niveau ${niveau}.
+Wereld ${currentWorld} van 8 – thema: ${thema}
+Level ${level} van 5 (${levelWithinWorld}).
+Maak EENVOUDIGERE varianten (na een fout antwoord).${excludeText}
+Elke vraag moet UNIEK zijn: andere werkwoorden, andere zinnen, nooit hetzelfde als een andere vraag in deze reeks.`
+    : `Genereer ${count} meerkeuzevraag${count > 1 ? "vragen" : ""} taalverzorging voor basisschool groep 7-8, niveau ${niveau}.
+Wereld ${currentWorld} van 8 – thema: ${thema}
+Level ${level} van 5 (${levelWithinWorld}).${excludeText}
+Elke vraag moet UNIEK zijn: andere werkwoorden, andere zinnen, nooit hetzelfde als een andere vraag in deze reeks.`;
 
   try {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -95,51 +186,48 @@ Regels: precies 4 opties (A t/m D), elk optie "text" is één zin of één woord
           { role: "user", content: userPrompt },
         ],
         response_format: { type: "json_object" },
-        temperature: 0.7,
+        temperature: 0.9,
       }),
     });
 
     if (!res.ok) {
       const err = await res.text();
       console.error("OpenAI API error:", res.status, err);
-      return NextResponse.json(
-        { error: "LLM niet beschikbaar" },
-        { status: 502 }
-      );
+      return NextResponse.json({ error: "LLM niet beschikbaar" }, { status: 502 });
     }
 
     const data = await res.json();
     const raw = data.choices?.[0]?.message?.content;
     if (!raw) {
-      return NextResponse.json(
-        { error: "Geen antwoord van LLM" },
-        { status: 502 }
-      );
+      return NextResponse.json({ error: "Geen antwoord van LLM" }, { status: 502 });
     }
 
-    const parsed = JSON.parse(raw) as CurrentQuestion;
-    if (!parsed.vraag || !Array.isArray(parsed.opties) || parsed.opties.length !== 4) {
-      return NextResponse.json(
-        { error: "Ongeldig vraagformaat" },
-        { status: 502 }
-      );
+    const parsed = JSON.parse(raw) as { vragen?: unknown[] };
+    const rawVragen = Array.isArray(parsed.vragen) ? parsed.vragen : [parsed];
+
+    const questions: CurrentQuestion[] = rawVragen
+      .map((v) => {
+        const q = validateQuestion(v);
+        if (!q) return null;
+        const correct = q.opties.find((o) => o.correct);
+        if (correct) q.correctAntwoord = correct.id;
+        if (!q.feedbackBijFout)
+          q.feedbackBijFout = "Denk aan de stam van het werkwoord. Wat is de ik-vorm?";
+        return q;
+      })
+      .filter((q): q is CurrentQuestion => q !== null);
+
+    if (questions.length === 0) {
+      return NextResponse.json({ error: "Ongeldig vraagformaat" }, { status: 502 });
     }
 
-    const correct = parsed.opties.find((o) => o.correct);
-    if (!correct) {
-      parsed.opties[0].correct = true;
-      parsed.correctAntwoord = parsed.opties[0].id;
-    } else {
-      parsed.correctAntwoord = correct.id;
+    // count === 1: enkelvoudig antwoord (backward compatible)
+    if (count === 1) {
+      return NextResponse.json(questions[0]);
     }
-    if (!parsed.feedbackBijFout) parsed.feedbackBijFout = "Denk aan de stam van het werkwoord. Wat is de ik-vorm?";
-
-    return NextResponse.json(parsed);
+    return NextResponse.json({ vragen: questions });
   } catch (e) {
     console.error("Quiz API error:", e);
-    return NextResponse.json(
-      { error: "Fout bij ophalen vraag" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Fout bij ophalen vraag" }, { status: 500 });
   }
 }

@@ -4,7 +4,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LevelGrid, Position, CurrentQuestion } from "@/lib/types";
 import { getLevelGrid, GRID_SIZE_MAZE } from "@/lib/levelData";
-import { fetchQuestion } from "@/lib/quizApi";
+import { fetchQuestionsForLevel } from "@/lib/quizApi";
+import { getGlobalShown, addToGlobalShown } from "@/lib/globalShown";
 import { QuizModal } from "./QuizModal";
 
 /** Paden naar afbeeldingen in public/Tilemap/ – alleen <img> tags, geen Next.js Image */
@@ -154,15 +155,13 @@ function questionFingerprint(q: CurrentQuestion): string {
   return `${q.vraag.trim()}\n${optieTexts}`;
 }
 
-/** Kies een willekeurige vraag uit de bank die nog NIET is getoond (fingerprint niet in exclude). Nooit dubbele. */
+/** Kies een willekeurige vraag uit de bank die nog NIET globaal is getoond. Als alle bank-vragen zijn gebruikt, kies random (nood-fallback). */
 function getRandomQuestion(excludeFingerprints: string[]): CurrentQuestion {
   const available = questionBank.filter(
     (q) => !excludeFingerprints.includes(questionFingerprint(q))
   );
-  if (available.length === 0) {
-    throw new Error("Geen ongebruikte vragen meer in de bank");
-  }
-  return available[Math.floor(Math.random() * available.length)];
+  const pool = available.length > 0 ? available : questionBank;
+  return pool[Math.floor(Math.random() * pool.length)];
 }
 
 interface GameMapProps {
@@ -187,26 +186,63 @@ export function GameMap({
   const [feedback, setFeedback] = useState("");
   const [terminalCell, setTerminalCell] = useState<Position | null>(null);
   const [currentQuestion, setCurrentQuestion] = useState<CurrentQuestion | null>(null);
-  const [questionLoading, setQuestionLoading] = useState(false);
   const [lastAnswerWasWrong, setLastAnswerWasWrong] = useState(false);
   const [levelMessage, setLevelMessage] = useState("");
   const [levelMessageType, setLevelMessageType] = useState<"success" | "warning">("success");
   const gridRef = useRef<HTMLDivElement>(null);
-  /** Vragen die in dit level correct zijn beantwoord (bijgehouden via fingerprint). */
-  const shownInLevel = useRef<{ fingerprints: string[]; vraagTexts: string[] }>({
-    fingerprints: [],
-    vraagTexts: [],
-  });
-  /** Per deur-positie: de vraag die er bij hoort (zelfde vraag tot correct beantwoord). */
+  /** Per deur-positie: de vraag die er bij hoort (zelfde vraag tot correct beantwoord). Gevuld bij level-start. */
   const doorQuestions = useRef<Map<string, CurrentQuestion>>(new Map());
+  const [levelQuestionsLoading, setLevelQuestionsLoading] = useState(true);
 
+  // Bij elk nieuw level: laad het grid en genereer ALLE vragen voor dat level in één keer.
   useEffect(() => {
+    let cancelled = false;
     const grid = getLevelGrid(currentLevel);
     setMap(grid);
     setPlayer(findPlayerStart(grid));
-    shownInLevel.current = { fingerprints: [], vraagTexts: [] };
     doorQuestions.current = new Map();
-  }, [currentLevel]);
+    setLevelQuestionsLoading(true);
+
+    // Zoek alle deurposities in dit level
+    const doorPositions: Position[] = [];
+    for (let r = 0; r < grid.length; r++) {
+      for (let c = 0; c < grid[r].length; c++) {
+        if (grid[r][c] === 3) doorPositions.push({ row: r, col: c });
+      }
+    }
+
+    // Haal alle vragen voor dit level op bij de LLM (één API-call)
+    const globalShown = getGlobalShown();
+    fetchQuestionsForLevel({
+      currentWorld,
+      level: currentLevel,
+      count: doorPositions.length,
+      excludeVragen: globalShown.vraagTexts,
+    }).then((questions) => {
+      if (cancelled) return;
+      // Koppel elke deur aan een vraag; vul resterende deuren met fallback
+      doorPositions.forEach((pos, i) => {
+        const key = `${pos.row},${pos.col}`;
+        const question =
+          questions[i] ??
+          getRandomQuestion(getGlobalShown().fingerprints);
+        doorQuestions.current.set(key, question);
+      });
+      setLevelQuestionsLoading(false);
+    }).catch(() => {
+      if (cancelled) return;
+      // API onbereikbaar: fallback bank gebruiken
+      const fp = getGlobalShown().fingerprints;
+      doorPositions.forEach((pos) => {
+        const key = `${pos.row},${pos.col}`;
+        doorQuestions.current.set(key, getRandomQuestion(fp));
+      });
+      setLevelQuestionsLoading(false);
+    });
+
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentLevel, currentWorld]);
 
   useEffect(() => {
     gridRef.current?.focus();
@@ -224,13 +260,9 @@ export function GameMap({
         setLastAnswerWasWrong(false);
         setIsModalOpen(false);
         setFeedback("");
-        // Nu pas toevoegen aan 'shown': vraag is correct beantwoord
+        // Nu pas toevoegen aan globale shown: vraag is correct beantwoord
         if (currentQuestion) {
-          const fp = questionFingerprint(currentQuestion);
-          shownInLevel.current = {
-            fingerprints: [...shownInLevel.current.fingerprints, fp],
-            vraagTexts: [...shownInLevel.current.vraagTexts, currentQuestion.vraag.trim()],
-          };
+          addToGlobalShown(questionFingerprint(currentQuestion), currentQuestion.vraag);
         }
         // Deur vergeet de vraag: deur opent (type 0)
         const doorKey = `${terminalCell.row},${terminalCell.col}`;
@@ -290,69 +322,10 @@ export function GameMap({
       if (cell === 3) {
         const doorKey = `${newRow},${newCol}`;
         setTerminalCell({ row: newRow, col: newCol });
+        // Vraag is al pre-geladen bij level-start; toon de gekoppelde vraag voor deze deur
+        const question = doorQuestions.current.get(doorKey) ?? getRandomQuestion(getGlobalShown().fingerprints);
+        setCurrentQuestion(question);
         setIsModalOpen(true);
-
-        // Speler komt terug bij een deur die al eerder fout was → zelfde vraag opnieuw
-        const cached = doorQuestions.current.get(doorKey);
-        if (cached) {
-          setCurrentQuestion(cached);
-          setQuestionLoading(false);
-          return;
-        }
-
-        // Nieuwe deur: haal een unieke vraag op (niet al correct beantwoord)
-        setCurrentQuestion(null);
-        setQuestionLoading(true);
-        const niveau = currentLevel <= 2 ? "1F" : "2F";
-        const excludeFingerprints = [...shownInLevel.current.fingerprints];
-        const excludeVragenForApi = [...shownInLevel.current.vraagTexts];
-
-        const applyUniqueQuestion = (q: CurrentQuestion | null) => {
-          let question: CurrentQuestion;
-          try {
-            question = q ?? getRandomQuestion(excludeFingerprints);
-          } catch {
-            question = getRandomQuestion([]);
-          }
-          const fp = questionFingerprint(question);
-          if (excludeFingerprints.includes(fp)) {
-            try {
-              question = getRandomQuestion(excludeFingerprints);
-            } catch {
-              question = getRandomQuestion([]);
-            }
-          }
-          // Sla op per deur (zelfde vraag bij terugkeer na fout)
-          doorQuestions.current.set(doorKey, question);
-          setCurrentQuestion(question);
-        };
-
-        fetchQuestion({
-          niveau,
-          level: currentLevel,
-          easier: lastAnswerWasWrong,
-          excludeVragen: excludeVragenForApi,
-        })
-          .then((q) => {
-            const fp = q ? questionFingerprint(q) : "";
-            if (q && excludeFingerprints.includes(fp)) {
-              try {
-                applyUniqueQuestion(getRandomQuestion(excludeFingerprints));
-              } catch {
-                applyUniqueQuestion(getRandomQuestion([]));
-              }
-            } else {
-              applyUniqueQuestion(q);
-            }
-          })
-          .catch(() => {
-            try {
-              applyUniqueQuestion(getRandomQuestion(excludeFingerprints));
-            } catch {
-              applyUniqueQuestion(getRandomQuestion([]));
-            }
-          })
-          .finally(() => setQuestionLoading(false));
         return;
       }
 
@@ -382,7 +355,19 @@ export function GameMap({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [player, map, isModalOpen, currentLevel, lastAnswerWasWrong, onLevelComplete, onWorldComplete]);
+  }, [player, map, isModalOpen, currentLevel, currentWorld, lastAnswerWasWrong, onLevelComplete, onWorldComplete]);
+
+  if (levelQuestionsLoading) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 font-opendyslexic">
+        <p className="text-2xl font-bold text-slate-700">Wereld {currentWorld}, Level {currentLevel}</p>
+        <p className="text-xl text-slate-500">Vragen laden voor dit level…</p>
+        <div className="h-3 w-48 overflow-hidden rounded-full bg-slate-200">
+          <div className="h-full animate-pulse rounded-full bg-blue-500" style={{ width: "60%" }} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-6 p-6 font-opendyslexic">
@@ -455,7 +440,7 @@ export function GameMap({
       <QuizModal
         isOpen={isModalOpen}
         question={currentQuestion}
-        questionLoading={questionLoading}
+        questionLoading={false}
         feedback={feedback}
         onAnswer={handleTerminalAnswer}
       />
