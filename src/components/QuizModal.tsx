@@ -8,6 +8,8 @@ interface QuizModalProps {
   questionLoading?: boolean;
   feedback: string;
   onAnswer: (correct: boolean) => void;
+  /** Wordt aangeroepen als de leerling de feedbacktip wegklikt met het kruisje. */
+  onDismissFeedback?: () => void;
 }
 
 export function QuizModal({
@@ -16,6 +18,7 @@ export function QuizModal({
   questionLoading = false,
   feedback,
   onAnswer,
+  onDismissFeedback,
 }: QuizModalProps) {
   if (!isOpen) return null;
 
@@ -33,10 +36,11 @@ export function QuizModal({
       aria-modal="true"
       aria-labelledby="quiz-modal-title"
     >
-      <div className="mx-4 max-w-lg rounded-2xl bg-white p-10 shadow-xl">
+      <div className="relative mx-4 w-full max-w-lg rounded-2xl bg-white p-10 shadow-xl">
         {questionLoading && !question && (
           <p className="text-xl text-slate-600">Vraag laden...</p>
         )}
+
         {question && !showFeedback && !questionLoading && (
           <>
             <h2
@@ -60,10 +64,21 @@ export function QuizModal({
             </div>
           </>
         )}
+
         {showFeedback && (
-          <p className="text-2xl font-medium text-red-600" role="status">
-            {feedback}
-          </p>
+          <div className="flex flex-col gap-6">
+            <p className="text-2xl font-medium text-red-600" role="status">
+              {feedback}
+            </p>
+            <button
+              type="button"
+              onClick={onDismissFeedback}
+              className="self-end rounded-xl bg-slate-700 px-8 py-4 text-xl font-bold text-white transition hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2"
+              aria-label="Tip sluiten en terug naar het spel"
+            >
+              Ik snap het, ga terug ✕
+            </button>
+          </div>
         )}
       </div>
     </div>

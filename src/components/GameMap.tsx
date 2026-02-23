@@ -283,15 +283,7 @@ export function GameMap({
     [terminalCell, currentQuestion]
   );
 
-  useEffect(() => {
-    if (feedback === "") return;
-    const t = setTimeout(() => {
-      setFeedback("");
-      setIsModalOpen(false);
-      setTerminalCell(null);
-    }, 2000);
-    return () => clearTimeout(t);
-  }, [feedback]);
+  // Feedback sluit niet automatisch – de leerling klikt zelf het kruisje weg (zie QuizModal).
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -443,6 +435,11 @@ export function GameMap({
         questionLoading={false}
         feedback={feedback}
         onAnswer={handleTerminalAnswer}
+        onDismissFeedback={() => {
+          setFeedback("");
+          setIsModalOpen(false);
+          setTerminalCell(null);
+        }}
       />
     </div>
   );
