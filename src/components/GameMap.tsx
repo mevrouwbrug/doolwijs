@@ -220,22 +220,43 @@ export function GameMap({
       excludeVragen: globalShown.vraagTexts,
     }).then((questions) => {
       if (cancelled) return;
-      // Koppel elke deur aan een vraag; vul resterende deuren met fallback
+
+      // Dedupliceer binnen de batch: sla vingerafdrukken bij die al globaal bekend zijn + binnen deze batch
+      const usedFPs = new Set<string>(globalShown.fingerprints);
+      const dedupedQuestions: CurrentQuestion[] = [];
+      for (const q of questions) {
+        const fp = questionFingerprint(q);
+        if (!usedFPs.has(fp)) {
+          usedFPs.add(fp);
+          dedupedQuestions.push(q);
+        }
+      }
+
+      // Wijs elke deur een unieke vraag toe en registreer haar DIRECT in globalShown
+      // (zodat ook fout beantwoorde vragen nooit opnieuw worden gegenereerd in een volgend level)
       doorPositions.forEach((pos, i) => {
         const key = `${pos.row},${pos.col}`;
         const question =
-          questions[i] ??
-          getRandomQuestion(getGlobalShown().fingerprints);
+          dedupedQuestions[i] ??
+          getRandomQuestion(Array.from(usedFPs));
         doorQuestions.current.set(key, question);
+        const fp = questionFingerprint(question);
+        usedFPs.add(fp);
+        addToGlobalShown(fp, question.vraag);
       });
+
       setLevelQuestionsLoading(false);
     }).catch(() => {
       if (cancelled) return;
       // API onbereikbaar: fallback bank gebruiken
-      const fp = getGlobalShown().fingerprints;
+      const usedFPs = new Set<string>(getGlobalShown().fingerprints);
       doorPositions.forEach((pos) => {
         const key = `${pos.row},${pos.col}`;
-        doorQuestions.current.set(key, getRandomQuestion(fp));
+        const question = getRandomQuestion(Array.from(usedFPs));
+        doorQuestions.current.set(key, question);
+        const fp = questionFingerprint(question);
+        usedFPs.add(fp);
+        addToGlobalShown(fp, question.vraag);
       });
       setLevelQuestionsLoading(false);
     });
@@ -260,11 +281,7 @@ export function GameMap({
         setLastAnswerWasWrong(false);
         setIsModalOpen(false);
         setFeedback("");
-        // Nu pas toevoegen aan globale shown: vraag is correct beantwoord
-        if (currentQuestion) {
-          addToGlobalShown(questionFingerprint(currentQuestion), currentQuestion.vraag);
-        }
-        // Deur vergeet de vraag: deur opent (type 0)
+        // Vraag is al getrackt bij level-start; deur opent (type 0)
         const doorKey = `${terminalCell.row},${terminalCell.col}`;
         doorQuestions.current.delete(doorKey);
         setMap((prev) => {

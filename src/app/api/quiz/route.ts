@@ -26,46 +26,72 @@ import type { CurrentQuestion } from "@/lib/types";
  * }
  */
 
+/**
+ * Thema per wereld. Elke wereld dekt ALLE DIA-taalverzorgingsonderwerpen op toenemend niveau:
+ * werkwoordsvormen, hoofdletters, leestekens/interpunctie, spelling.
+ * Progressie: Wereld 1–3 = 1F (fundamenteel), Wereld 4–8 = 2F (streefniveau).
+ */
 const worldConfig: Record<number, { niveau: "1F" | "2F"; thema: string }> = {
   1: {
     niveau: "1F",
     thema:
-      "Persoonsvorm tegenwoordige tijd: stam + t bij hij/zij/het. Eenvoudige zinnen. Fouten: vergeten t of onjuiste stam.",
+      "Mix taalverzorging 1F-basis: (1) persoonsvorm tegenwoordige tijd stam+t bij hij/zij/het, " +
+      "(2) hoofdletters bij begin van een zin en eigennamen van personen, " +
+      "(3) punt aan het einde van een zin. Eenvoudige, korte zinnen.",
   },
   2: {
     niveau: "1F",
     thema:
-      "Persoonsvorm enkelvoud vs meervoud (de kinderen ... / het kind ...) en inversievragen met jij (geen t na stam bij inversie: 'Loop jij?').",
+      "Mix taalverzorging 1F: (1) persoonsvorm enkelvoud vs. meervoud (het kind speelt / de kinderen spelen), " +
+      "(2) jij-inversie zonder t (Loop jij? – niet Loopt jij?), " +
+      "(3) komma bij opsomming (Jan, Lisa en Tom gingen...), " +
+      "(4) hoofdletters bij namen van steden en landen.",
   },
   3: {
     niveau: "1F",
     thema:
-      "Verleden tijd regelmatige werkwoorden ('t kofschip: stam+te of stam+de). Bijv. werken→werkte, leven→leefde.",
+      "Mix taalverzorging 1F: (1) verleden tijd regelmatige werkwoorden ('t kofschip: werkte, speelde, fietste), " +
+      "(2) vraagteken aan het einde van een vraagzin, " +
+      "(3) uitroepteken bij een uitroep, " +
+      "(4) hoofdletters bij namen van talen en volken.",
   },
   4: {
     niveau: "2F",
     thema:
-      "Verleden tijd onregelmatige werkwoorden (lopen→liep, zien→zag, doen→deed, rijden→reed). Fouten: regelmatige vormen voor onregelmatige werkwoorden.",
+      "Mix taalverzorging 2F: (1) verleden tijd onregelmatige werkwoorden (liep, zag, deed, reed, bracht), " +
+      "(2) komma voor voegwoord in samengestelde zin (Hij sliep, want hij was moe.), " +
+      "(3) hoofdletters bij titels van boeken en films, " +
+      "(4) dubbele punt bij opsomming na aankondiging.",
   },
   5: {
     niveau: "2F",
     thema:
-      "Voltooid deelwoord (ge+stam+d of ge+stam+t, 't kofschip). Bijv. gelopen, gezien, gewerkt, gebeld. Fouten: verkeerde uitgang d/t.",
+      "Mix taalverzorging 2F: (1) voltooid deelwoord ge+stam+d of ge+stam+t ('t kofschip: gewerkt, gebeld, geleefd), " +
+      "(2) hoofdletters bij aanspreekvormen (u, jij in formele tekst), " +
+      "(3) komma na bijwoordelijke bepaling aan het begin (Gisteren, ging hij naar school.), " +
+      "(4) correcte spelling samengestelde woorden.",
   },
   6: {
     niveau: "2F",
     thema:
-      "Mix persoonsvorm + voltooid deelwoord in langere zinnen. Bijv. 'Hij heeft gisteren hard gewerkt.' Fouten: combinatie van werkwoordsfouten.",
+      "Mix taalverzorging 2F: (1) persoonsvorm + voltooid deelwoord gecombineerd (Hij heeft gewerkt. / Zij waren gelopen.), " +
+      "(2) komma in bijzin (Als het regent, blijf ik thuis.), " +
+      "(3) hoofdletters bij namen van organisaties en instellingen, " +
+      "(4) leestekens bij directe rede (aanhalingstekens, komma).",
   },
   7: {
     niveau: "2F",
     thema:
-      "Taalverzorging: hoofdletters (namen, zinsbegin), kommaplaatsing, punt aan het einde. Fouten in het schrijven van eigennamen of zinsopbouw.",
+      "Mix taalverzorging 2F-breed: wissel af tussen (1) alle werkwoordsvormen (pv, vt, vd), " +
+      "(2) alle hoofdletterregels (zinsbegin, namen, titels, talen, aanspreekvormen), " +
+      "(3) alle leestekens (punt, komma, vraagteken, uitroepteken, dubbele punt, aanhalingstekens). " +
+      "Zorg dat elke vraag een ander taalverzorgingsonderwerp test.",
   },
   8: {
     niveau: "2F",
     thema:
-      "Toetsniveau: mix van alles (persoonsvorm, verleden tijd, voltooid deelwoord, hoofdletters). De moeilijkste vragen van het programma.",
+      "DIA-toetsniveau: vrije mix van ALLES – persoonsvorm, verleden tijd, voltooid deelwoord, hoofdletters (alle regels), " +
+      "interpunctie (alle leestekens). Dit zijn de zwaarste vragen, vergelijkbaar met de eindtoets basisschool.",
   },
 };
 
@@ -128,21 +154,30 @@ export async function POST(request: NextRequest) {
 
   const excludeText =
     excludeVragen.length > 0
-      ? ` CRUCIAAL: De volgende vraagteksten zijn GLOBAAL al eerder gesteld (andere levels/werelden). Gebruik deze NOOIT – geen identieke tekst, geen dezelfde voorbeeldzinnen: ${excludeVragen
-          .slice(-40)
-          .map((v) => `"${v}"`)
-          .join(" | ")}. Kies ANDERE werkwoorden en zinnen.`
+      ? ` CRUCIAAL – NOOIT HERHALEN: De onderstaande vraagteksten zijn al eerder gesteld in dit spel (andere levels of werelden). Genereer NOOIT een vraag met dezelfde tekst, dezelfde voorbeeldzin of hetzelfde werkwoord+context. Gebruik volledig andere werkwoorden, namen en situaties:\n${excludeVragen
+          .slice(-80)
+          .map((v, i) => `${i + 1}. "${v}"`)
+          .join("\n")}`
       : "";
 
-  const systemPrompt = `Je bent een expert in taalverzorging voor de basisschool (groep 7-8, kinderen van 11-12 jaar). Je genereert meerkeuzevragen in de stijl van de DIA-toets taalverzorging, afgestemd op referentieniveaus 1F en 2F (Referentiekader taal, SLO/OCW).
+  const systemPrompt = `Je bent een expert in taalverzorging voor de basisschool (groep 7-8, kinderen van 11-12 jaar). Je genereert meerkeuzevragen in de stijl van de DIA-toets taalverzorging, afgestemd op referentieniveaus 1F en 2F.
+
+ONDERWERPEN die je door elkaar moet gebruiken (DIA taalverzorging):
+1. Werkwoordsvormen: persoonsvorm tegenwoordige tijd (stam+t bij hij/zij/het), jij-inversie (geen t), enkelvoud vs. meervoud
+2. Verleden tijd: regelmatig ('t kofschip → stam+te of stam+de), onregelmatig (liep, zag, deed, bracht)
+3. Voltooid deelwoord: ge+stam+d of ge+stam+t ('t kofschip)
+4. Hoofdletters: begin van een zin, eigennamen van personen/steden/landen/talen, titels van boeken/films
+5. Leestekens/interpunctie: punt, vraagteken, uitroepteken, komma (opsomming, bijzin, na bijwoordelijke bepaling), dubbele punt, aanhalingstekens
 
 VASTE REGELS:
-- Doelgroep: basisschool groep 7-8, dyslexie-vriendelijk (eenvoudige taal, korte zinnen).
-- Vraagstelling: "Welke zin is juist geschreven?" of "Welk woord past in de zin?" (DIA-stijl).
-- Precies 4 opties (A t/m D) per vraag. Elke optie is één complete zin OF één los woord. Geen uitleg in de optie.
-- Precies één optie is correct. De andere drie zijn herkenbare spelfouten (veelgemaakte werkwoordsfouten).
-- feedbackBijFout: SOCRATISCH. Nooit het juiste antwoord geven. Leg uit wat er fout is + geef een tip (max 2 zinnen).
-- VARIATIE: gebruik steeds andere werkwoorden, andere namen, andere situaties. Nooit twee keer dezelfde voorbeeldzin.
+- Doelgroep: basisschool groep 7-8, dyslexie-vriendelijk (korte zinnen, duidelijke fouten).
+- Vraagstelling: "Welke zin is juist geschreven?" of "Welk woord past in de zin?" of "Welke zin heeft een fout?" (DIA-stijl).
+- Precies 4 opties (A t/m D) per vraag. Elke optie is één complete zin OF één los woord.
+- Precies één optie is correct. Drie veelgemaakte, herkenbare fouten.
+- De vier opties binnen één vraag moeten allemaal ANDERS zijn (nooit twee identieke opties).
+- feedbackBijFout: SOCRATISCH – nooit het juiste antwoord geven. Leg uit wat er fout is + geef een tip (max 2 zinnen).
+- VARIATIE: gebruik steeds andere werkwoorden, namen, situaties. Nooit dezelfde voorbeeldzin twee keer.
+- Als je ${count} vragen genereert: laat elke vraag een ANDER taalverzorgingsonderwerp testen (zie lijst boven).
 
 Antwoord UITSLUITEND met geldige JSON (geen markdown, geen extra tekst):
 {
@@ -156,7 +191,7 @@ Antwoord UITSLUITEND met geldige JSON (geen markdown, geen extra tekst):
         { "id": "D", "text": "Volledige zin of één woord.", "correct": false }
       ],
       "correctAntwoord": "B",
-      "feedbackBijFout": "Socratische tip."
+      "feedbackBijFout": "Socratische tip (max 2 zinnen)."
     }
   ]
 }`;
@@ -205,10 +240,19 @@ Elke vraag moet UNIEK zijn: andere werkwoorden, andere zinnen, nooit hetzelfde a
     const parsed = JSON.parse(raw) as { vragen?: unknown[] };
     const rawVragen = Array.isArray(parsed.vragen) ? parsed.vragen : [parsed];
 
+    // Server-side deduplicatie: filter vragen die identiek zijn aan de exclude-lijst of aan
+    // elkaar binnen deze batch. Vergelijking op genormaliseerde vraag-tekst.
+    const excludeSet = new Set(excludeVragen.map((v) => v.trim().toLowerCase()));
+    const seenInBatch = new Set<string>();
+
     const questions: CurrentQuestion[] = rawVragen
       .map((v) => {
         const q = validateQuestion(v);
         if (!q) return null;
+        const key = q.vraag.trim().toLowerCase();
+        // Gooi weg als al eerder gesteld (globaal) of duplicaat in deze batch
+        if (excludeSet.has(key) || seenInBatch.has(key)) return null;
+        seenInBatch.add(key);
         const correct = q.opties.find((o) => o.correct);
         if (correct) q.correctAntwoord = correct.id;
         if (!q.feedbackBijFout)
