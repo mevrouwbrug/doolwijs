@@ -152,10 +152,12 @@ export async function POST(request: NextRequest) {
         ? "midden van deze wereld"
         : "einde van deze wereld – iets uitdagender";
 
+  // excludeVragen bevat nu voorbeeldZINNEN (de opties), niet vraag-stammen.
+  // Stuur de laatste 120 zinnen mee zodat de LLM andere werkwoorden/namen kiest.
+  const recentSentences = excludeVragen.slice(-120);
   const excludeText =
-    excludeVragen.length > 0
-      ? ` CRUCIAAL – NOOIT HERHALEN: De onderstaande vraagteksten zijn al eerder gesteld in dit spel (andere levels of werelden). Genereer NOOIT een vraag met dezelfde tekst, dezelfde voorbeeldzin of hetzelfde werkwoord+context. Gebruik volledig andere werkwoorden, namen en situaties:\n${excludeVragen
-          .slice(-80)
+    recentSentences.length > 0
+      ? `\n\nCRUCIAAL – NOOIT HERHALEN: De volgende voorbeeldzinnen zijn al eerder gebruikt in dit spel. Gebruik NOOIT dezelfde zin, hetzelfde werkwoord in dezelfde context, of dezelfde namen. Kies compleet andere werkwoorden, namen en situaties:\n${recentSentences
           .map((v, i) => `${i + 1}. "${v}"`)
           .join("\n")}`
       : "";
@@ -240,19 +242,26 @@ Elke vraag moet UNIEK zijn: andere werkwoorden, andere zinnen, nooit hetzelfde a
     const parsed = JSON.parse(raw) as { vragen?: unknown[] };
     const rawVragen = Array.isArray(parsed.vragen) ? parsed.vragen : [parsed];
 
-    // Server-side deduplicatie: filter vragen die identiek zijn aan de exclude-lijst of aan
-    // elkaar binnen deze batch. Vergelijking op genormaliseerde vraag-tekst.
-    const excludeSet = new Set(excludeVragen.map((v) => v.trim().toLowerCase()));
+    // Server-side deduplicatie: vergelijk op de volledige vraag-inhoud (vraag + alle opties),
+    // niet alleen de vraagstam (die is vaak identiek bij DIA-stijl).
+    const excludeSentenceSet = new Set(excludeVragen.map((v) => v.trim().toLowerCase()));
     const seenInBatch = new Set<string>();
 
     const questions: CurrentQuestion[] = rawVragen
       .map((v) => {
         const q = validateQuestion(v);
         if (!q) return null;
-        const key = q.vraag.trim().toLowerCase();
-        // Gooi weg als al eerder gesteld (globaal) of duplicaat in deze batch
-        if (excludeSet.has(key) || seenInBatch.has(key)) return null;
-        seenInBatch.add(key);
+
+        // Volledige vingerafdruk: vraag + alle opties gesorteerd
+        const fullKey = (q.vraag.trim() + "|" + q.opties.map((o) => o.text.trim()).sort().join("|")).toLowerCase();
+        if (seenInBatch.has(fullKey)) return null;
+        seenInBatch.add(fullKey);
+
+        // Check of de opties al eerder zijn gebruikt (elke optie-zin moet nieuw zijn)
+        const optionTexts = q.opties.map((o) => o.text.trim().toLowerCase());
+        const allOptionsUsed = optionTexts.every((t) => excludeSentenceSet.has(t));
+        if (allOptionsUsed) return null;
+
         const correct = q.opties.find((o) => o.correct);
         if (correct) q.correctAntwoord = correct.id;
         if (!q.feedbackBijFout)

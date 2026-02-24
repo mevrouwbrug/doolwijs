@@ -217,7 +217,7 @@ export function GameMap({
       currentWorld,
       level: currentLevel,
       count: doorPositions.length,
-      excludeVragen: globalShown.vraagTexts,
+      excludeVragen: globalShown.usedSentences,
     }).then((questions) => {
       if (cancelled) return;
 
@@ -232,8 +232,6 @@ export function GameMap({
         }
       }
 
-      // Wijs elke deur een unieke vraag toe en registreer haar DIRECT in globalShown
-      // (zodat ook fout beantwoorde vragen nooit opnieuw worden gegenereerd in een volgend level)
       doorPositions.forEach((pos, i) => {
         const key = `${pos.row},${pos.col}`;
         const question =
@@ -242,7 +240,7 @@ export function GameMap({
         doorQuestions.current.set(key, question);
         const fp = questionFingerprint(question);
         usedFPs.add(fp);
-        addToGlobalShown(fp, question.vraag);
+        addToGlobalShown(fp, question.opties.map((o) => o.text));
       });
 
       setLevelQuestionsLoading(false);
@@ -256,7 +254,7 @@ export function GameMap({
         doorQuestions.current.set(key, question);
         const fp = questionFingerprint(question);
         usedFPs.add(fp);
-        addToGlobalShown(fp, question.vraag);
+        addToGlobalShown(fp, question.opties.map((o) => o.text));
       });
       setLevelQuestionsLoading(false);
     });
